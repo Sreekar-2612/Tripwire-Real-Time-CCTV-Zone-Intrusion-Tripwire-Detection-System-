@@ -14,6 +14,8 @@ backend/data/tripwire.db
 backend/data/snapshots/*.jpg
 backend/data/clips/*.mp4
 backend/data/uploads/*
+backend/data/logs/*.log
+!backend/data/logs/.gitkeep
 !backend/data/recordings/.gitkeep
 !backend/data/models/.gitkeep
 
