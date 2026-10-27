@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.app.config import settings
 from backend.app.db import init_db
-from backend.app.api import streams, zones, events, ws, settings as settings_api
+from backend.app.api import streams, zones, events, ws, settings as settings_api, analytics
 from backend.app.core.logger import setup_logging
 
 # Configure logging
@@ -44,10 +44,52 @@ app.include_router(streams.router)
 app.include_router(zones.router)
 app.include_router(events.router)
 app.include_router(settings_api.router)
+app.include_router(analytics.router)
 app.include_router(ws.router)
 
 # Mount static files for direct snapshot / recording assets
 app.mount("/static", StaticFiles(directory=str(settings.DATA_DIR)), name="static")
+
+@app.get("/metrics")
+def prometheus_metrics():
+    """Prometheus exposition metrics endpoint for monitoring & observability."""
+    import psutil
+    from fastapi.responses import PlainTextResponse
+    from backend.app.db import SessionLocal
+    from backend.app.models import Event, Zone
+
+    db = SessionLocal()
+    try:
+        total_events = db.query(Event).count()
+        total_zones = db.query(Zone).count()
+        armed_zones = db.query(Zone).filter(Zone.armed == True).count()
+    finally:
+        db.close()
+
+    cpu_pct = psutil.cpu_percent()
+    mem = psutil.virtual_memory()
+
+    metrics = [
+        "# HELP tripwire_active_streams Total active CCTV camera streams",
+        "# TYPE tripwire_active_streams gauge",
+        f"tripwire_active_streams {len(streams.active_pipelines)}",
+        "# HELP tripwire_armed_zones Total actively armed security zones",
+        "# TYPE tripwire_armed_zones gauge",
+        f"tripwire_armed_zones {armed_zones}",
+        "# HELP tripwire_total_zones Total configured security zones",
+        "# TYPE tripwire_total_zones gauge",
+        f"tripwire_total_zones {total_zones}",
+        "# HELP tripwire_total_events Total historical recorded security events",
+        "# TYPE tripwire_total_events counter",
+        f"tripwire_total_events {total_events}",
+        "# HELP tripwire_system_cpu_percent Host CPU utilization percent",
+        "# TYPE tripwire_system_cpu_percent gauge",
+        f"tripwire_system_cpu_percent {cpu_pct}",
+        "# HELP tripwire_system_memory_percent Host Memory utilization percent",
+        "# TYPE tripwire_system_memory_percent gauge",
+        f"tripwire_system_memory_percent {mem.percent}",
+    ]
+    return PlainTextResponse("\n".join(metrics) + "\n", media_type="text/plain; version=0.0.4")
 
 @app.get("/api/health")
 def health_check():

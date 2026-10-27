@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+*.pt
+
+# Data files & DB
+backend/data/tripwire.db
+backend/data/snapshots/*.jpg
+backend/data/clips/*.mp4
+backend/data/uploads/*
+!backend/data/recordings/.gitkeep
+!backend/data/models/.gitkeep
+
+# Testing & Cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node & Frontend
+node_modules/
+frontend/dist/
+.env
+.DS_Store
+Thumbs.db

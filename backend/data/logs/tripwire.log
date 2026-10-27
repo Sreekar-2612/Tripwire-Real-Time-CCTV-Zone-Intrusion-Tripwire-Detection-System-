@@ -1,0 +1,25 @@
+2026-10-27 21:59:23 - tripwire.main - INFO - lifespan:18 - Initializing Tripwire CCTV Intrusion System...
+2026-10-27 21:59:23 - tripwire.detector - INFO - __init__:35 - Initializing YOLO model 'yolov8n.pt' on device 'cpu'
+2026-10-27 21:59:23 - tripwire.pipeline - INFO - reload_zones:81 - Loaded 1 zones for stream 'Demo Surveillance Camera' (8483b9a3-fe29-42f1-a647-76a7472a3588)
+2026-10-27 21:59:23 - tripwire.sources - INFO - _open_capture:59 - Connecting to source 'C:\Users\Sreekar_Tirumala\Documents\College\CV\TRIP-WIRE\backend\data\recordings\cctv_sample.mp4' (file)...
+2026-10-27 21:59:23 - tripwire.sources - INFO - _open_capture:84 - Source connected: C:\Users\Sreekar_Tirumala\Documents\College\CV\TRIP-WIRE\backend\data\recordings\cctv_sample.mp4 (640x480 @ 25.0fps)
+2026-10-27 21:59:23 - tripwire.pipeline - INFO - start:99 - Pipeline started for stream 'Demo Surveillance Camera'
+2026-10-27 22:02:08 - tripwire.ws - INFO - connect:16 - WebSocket client connected. Total clients: 1
+2026-10-27 22:02:30 - tripwire.ws - INFO - disconnect:21 - WebSocket client disconnected. Total clients: 0
+2026-10-27 22:02:31 - tripwire.ws - INFO - connect:16 - WebSocket client connected. Total clients: 1
+2026-10-27 22:02:34 - tripwire.ws - INFO - connect:16 - WebSocket client connected. Total clients: 2
+2026-10-27 22:11:24 - tripwire.main - INFO - lifespan:18 - Initializing Tripwire CCTV Intrusion System...
+2026-10-27 22:11:24 - tripwire.detector - INFO - __init__:35 - Initializing YOLO model 'yolov8n.pt' on device 'cpu'
+2026-10-27 22:11:24 - tripwire.pipeline - INFO - reload_zones:81 - Loaded 1 zones for stream 'Demo Surveillance Camera' (8483b9a3-fe29-42f1-a647-76a7472a3588)
+2026-10-27 22:11:24 - tripwire.sources - INFO - _open_capture:59 - Connecting to source 'C:\Users\Sreekar_Tirumala\Documents\College\CV\TRIP-WIRE\backend\data\recordings\cctv_sample.mp4' (file)...
+2026-10-27 22:11:24 - tripwire.sources - INFO - _open_capture:84 - Source connected: C:\Users\Sreekar_Tirumala\Documents\College\CV\TRIP-WIRE\backend\data\recordings\cctv_sample.mp4 (640x480 @ 25.0fps)
+2026-10-27 22:11:24 - tripwire.pipeline - INFO - start:99 - Pipeline started for stream 'Demo Surveillance Camera'
+2026-10-27 22:11:26 - tripwire.ws - INFO - connect:16 - WebSocket client connected. Total clients: 1
+2026-10-27 22:11:26 - tripwire.ws - INFO - connect:16 - WebSocket client connected. Total clients: 2
+2026-10-27 22:17:06 - httpx - INFO - _send_single_request:1025 - HTTP Request: GET http://testserver/api/health "HTTP/1.1 200 OK"
+2026-10-27 22:17:06 - httpx - INFO - _send_single_request:1025 - HTTP Request: GET http://testserver/metrics "HTTP/1.1 200 OK"
+2026-10-27 22:17:06 - httpx - INFO - _send_single_request:1025 - HTTP Request: GET http://testserver/api/streams "HTTP/1.1 200 OK"
+2026-10-27 22:17:06 - httpx - INFO - _send_single_request:1025 - HTTP Request: GET http://testserver/api/settings "HTTP/1.1 200 OK"
+2026-10-27 22:17:06 - httpx - INFO - _send_single_request:1025 - HTTP Request: PUT http://testserver/api/settings "HTTP/1.1 200 OK"
+2026-10-27 22:17:06 - httpx - INFO - _send_single_request:1025 - HTTP Request: GET http://testserver/api/events?limit=10 "HTTP/1.1 200 OK"
+2026-10-27 22:17:06 - httpx - INFO - _send_single_request:1025 - HTTP Request: GET http://testserver/api/analytics/summary "HTTP/1.1 200 OK"
