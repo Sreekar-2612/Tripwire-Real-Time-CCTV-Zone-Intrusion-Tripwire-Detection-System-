@@ -2,6 +2,12 @@ import argparse
 import sys
 import time
 from pathlib import Path
+
+# Ensure project root is in sys.path for direct script execution
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 import cv2
 import numpy as np
 
