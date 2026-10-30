@@ -47,6 +47,7 @@ class SingleTrack:
         self.bbox = list(bbox)
         self.confidence = confidence
         self.foot_point = foot_point
+        self.dt = dt
         self.world_pos: Optional[Tuple[float, float]] = None
 
         # State lifecycle

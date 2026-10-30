@@ -52,7 +52,14 @@ def main():
     st.sidebar.header("⚙️ Surveillance Controls")
     feed_option = st.sidebar.selectbox(
         "Select Video Feed",
-        ["Walking Corridor CCTV", "Hallway Intrusion", "Pedestrian Crossing", "Upload Custom MP4", "Live Webcam (0)"]
+        [
+            "Walking Corridor CCTV",
+            "Hallway Intrusion",
+            "Pedestrian Crossing",
+            "Live Laptop Camera (Webcam 0)",
+            "External Camera (Webcam 1)",
+            "Upload Custom MP4"
+        ]
     )
 
     video_path = None
@@ -62,8 +69,10 @@ def main():
         video_path = "data/videos/cctv_sample.mp4"
     elif feed_option == "Pedestrian Crossing":
         video_path = "data/videos/solutions_ci_demo.mp4"
-    elif feed_option == "Live Webcam (0)":
+    elif feed_option == "Live Laptop Camera (Webcam 0)":
         video_path = 0
+    elif feed_option == "External Camera (Webcam 1)":
+        video_path = 1
     elif feed_option == "Upload Custom MP4":
         uploaded_file = st.sidebar.file_uploader("Upload video file", type=["mp4", "avi", "mov"])
         if uploaded_file:
@@ -115,9 +124,16 @@ def main():
     status_text = st.empty()
 
     if st.session_state.is_running and video_path is not None:
-        cap = cv2.VideoCapture(video_path)
+        if isinstance(video_path, int):
+            # DirectShow on Windows for instant webcam opening
+            cap = cv2.VideoCapture(video_path, cv2.CAP_DSHOW)
+            if not cap.isOpened():
+                cap = cv2.VideoCapture(video_path)
+        else:
+            cap = cv2.VideoCapture(video_path)
+
         if not cap.isOpened():
-            status_text.error(f"Failed to open video source: {video_path}")
+            status_text.error(f"❌ Failed to open video source or camera ({video_path}). Please check if your camera is in use by another app.")
             st.session_state.is_running = False
             return
 

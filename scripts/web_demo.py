@@ -54,8 +54,13 @@ class WebStreamEngine:
         if self.cap:
             self.cap.release()
         src = self.videos[self.active_feed]
-        target = int(src) if src.isdigit() else src
-        self.cap = cv2.VideoCapture(target)
+        if str(src).isdigit():
+            target = int(src)
+            self.cap = cv2.VideoCapture(target, cv2.CAP_DSHOW)
+            if not self.cap.isOpened():
+                self.cap = cv2.VideoCapture(target)
+        else:
+            self.cap = cv2.VideoCapture(src)
         self.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
 
     def set_feed(self, feed_name: str):
