@@ -9,7 +9,10 @@ try:
 except ImportError:
     st = None
 
+import importlib
 from ultralytics import YOLO
+import cv_core.tracking.tracker
+importlib.reload(cv_core.tracking.tracker)
 from cv_core.geometry.homography import HomographyTransformer
 from cv_core.geometry.zones_3d import MetricZone3D
 from cv_core.tracking.tracker import MultiTargetTracker

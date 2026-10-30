@@ -39,6 +39,7 @@ def compute_iou_matrix(boxes_a: np.ndarray, boxes_b: np.ndarray) -> np.ndarray:
 class SingleTrack:
     """Represents a single tracked target with state estimation and lifecycle."""
     _id_counter = 1
+    dt: float = 1.0 / 25.0
 
     def __init__(self, bbox: List[float], confidence: float, foot_point: Tuple[float, float], dt: float = 1.0/25.0):
         self.track_id = SingleTrack._id_counter
@@ -106,9 +107,9 @@ class SingleTrack:
             if len(self.world_trail) >= 2:
                 p1 = self.world_trail[-2]
                 p2 = self.world_trail[-1]
-                dt = max(0.001, self.dt)
-                self.metric_vx = (p2[0] - p1[0]) / dt
-                self.metric_vy = (p2[1] - p1[1]) / dt
+                step_dt = max(0.001, getattr(self, "dt", 1.0 / 25.0))
+                self.metric_vx = (p2[0] - p1[0]) / step_dt
+                self.metric_vy = (p2[1] - p1[1]) / step_dt
                 self.metric_speed = min(35.0, float(np.hypot(self.metric_vx, self.metric_vy) * 3.6))
 
     @property
