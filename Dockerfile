@@ -1,52 +1,43 @@
-# Stage 1: Build React Frontend
-FROM node:20-slim AS frontend-builder
-WORKDIR /app/frontend
+# Production Dockerfile for TRIP-WIRE (Hugging Face Spaces / Render / Railway)
+FROM python:3.10-slim
 
-COPY frontend/package*.json ./
-RUN npm install
-
-COPY frontend/ ./
-RUN npm run build
-
-# Stage 2: Production Python Backend + CV runtime
-FROM python:3.11-slim
-
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
+# Prevent Python from writing .pyc files and buffer stdout/stderr
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive
 
-# Install system runtime dependencies for OpenCV and PyTorch
+# Install system dependencies for OpenCV and FFmpeg video decoding
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     libgl1 \
     libglib2.0-0 \
-    libgomp1 \
     ffmpeg \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python requirements
-COPY backend/requirements.txt ./backend/
+# Create non-root user for security best practices
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app/data /app/.cache && \
+    chown -R appuser:appuser /app
+
+# Copy and install Python dependencies
+COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r backend/requirements.txt
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy application backend code
-COPY backend ./backend
+# Switch to non-root user
+USER appuser
 
-# Copy built frontend assets into frontend/dist
-COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+# Copy codebase
+COPY --chown=appuser:appuser . /app
 
-# Ensure persistent data directories exist
-RUN mkdir -p /app/backend/data/models \
-             /app/backend/data/snapshots \
-             /app/backend/data/clips \
-             /app/backend/data/recordings \
-             /app/backend/data/uploads
+# Pre-download YOLOv8n weights so the container starts instantly offline
+RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 
-EXPOSE 8000
+EXPOSE 8501 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:8000/api/health || exit 1
-
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default command: launch Streamlit Application
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+CMD ["streamlit", "run", "app_streamlit.py", "--server.port=8501", "--server.address=0.0.0.0"]

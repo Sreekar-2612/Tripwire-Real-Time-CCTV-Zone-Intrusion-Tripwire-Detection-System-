@@ -1,0 +1,19 @@
+# TRIP-WIRE: Real-Time CCTV Spatial Intelligence & BEV Ground Radar Engine
+# Core Computer Vision, Deep Learning & Geometry
+opencv-python>=4.8.0
+ultralytics>=8.1.0
+torch>=2.0.0
+numpy>=1.24.0
+scipy>=1.11.0
+shapely>=2.0.0
+pillow>=10.0.0
+
+# User Interfaces & Web Streaming
+streamlit>=1.30.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+pydantic>=2.6.0
+
+# Quality Assurance & Automated Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

@@ -9,24 +9,18 @@ venv/
 ENV/
 *.pt
 
-# Data files & DB
-backend/data/tripwire.db
-backend/data/snapshots/*.jpg
-backend/data/clips/*.mp4
-backend/data/uploads/*
-backend/data/logs/*.log
-!backend/data/logs/.gitkeep
-!backend/data/recordings/.gitkeep
-!backend/data/models/.gitkeep
+# Video artifacts & logs
+data/videos/uploaded_*
+data/videos/temp_uploaded.mp4
+*.log
+runs/
 
 # Testing & Cache
 .pytest_cache/
 .coverage
 htmlcov/
 
-# Node & Frontend
-node_modules/
-frontend/dist/
+# Environment & OS
 .env
 .DS_Store
 Thumbs.db

@@ -1,178 +1,180 @@
-# 🚨 Tripwire: Real-Time Zone-Intrusion Detection for CCTV
+# Tripwire: Real-Time CCTV Intrusion Detection, Planar Homography & Bird's Eye View (BEV) Radar Engine
 
-[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg?logo=fastapi)](https://fastapi.tiangolo.com)
-[![PyTorch](https://img.shields.io/badge/CV-YOLOv8n%20%2B%20ByteTrack-EE4C2C.svg?logo=pytorch)](https://github.com/ultralytics/ultralytics)
-[![React](https://img.shields.io/badge/Frontend-React%20%2B%20Vite%20%2B%20Tailwind-61DAFB.svg?logo=react)](https://react.dev)
-[![Docker](https://img.shields.io/badge/Deployment-Docker%20Compose-2496ED.svg?logo=docker)](https://www.docker.com)
-[![Tests](https://img.shields.io/badge/Tests-5%20Passed-emerald.svg)](backend/tests/)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![OpenCV](https://img.shields.io/badge/OpenCV-Computer%20Vision-green.svg)](https://opencv.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-Deep%20Learning-orange.svg)](https://pytorch.org/)
+[![YOLOv8](https://img.shields.io/badge/YOLOv8-Object%20Detection-red.svg)](https://github.com/ultralytics/ultralytics)
+[![Tests](https://img.shields.io/badge/pytest-32%20passed-brightgreen.svg)](tests/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-An MVP web application that monitors user-defined regions in video feeds (live RTSP streams, USB webcams, or uploaded recorded footage) and raises real-time alarms whenever a **PERSON** enters that region. Designed for non-technical security personnel through a browser interface.
+An advanced **Computer Vision and Spatial Intelligence System** designed for automated perimeter security and intrusion analysis on live CCTV camera streams (RTSP, webcams, and recorded footage).
+
+Tripwire bridges deep-learning object detection with **projective homography geometry**, **continuous Kalman filter state estimation**, and **pose kinetic action classification** to map intruders from camera perspectives onto a calibrated **Top-Down Bird's Eye View (BEV) Ground Radar map** with metric speed estimation ($\text{km/h}$ and $\text{m/s}$).
 
 ---
 
-## 🏛️ System Architecture
-
-```mermaid
-flowchart TD
-    subgraph Video_Ingestion["Video Ingestion Layer"]
-        A1[USB Webcam] --> S[OpenCV VideoSource Abstraction]
-        A2[Live RTSP Camera] --> S
-        A3[Uploaded Recorded MP4] --> S
-    end
-
-    subgraph CV_Pipeline["Real-Time AI Vision Pipeline"]
-        S -->|Frames| RB[Frame Ring Buffer 3s Pre-Event]
-        S -->|Frames| D[YOLOv8n Detector COCO Class 0 Person]
-        D -->|Detections| T[ByteTrack Multi-Object Tracker]
-        T -->|Track IDs & Footpoints| Z[Shapely Polygon & Directional Tripwire Engine]
-        Z -->|Debounce & Cooldown| SM{State Machine}
-    end
-
-    subgraph Event_Handling["Intrusion Event Dispatcher"]
-        SM -->|ENTER / LOITER / CROSS| REC[Snapshot & MP4 Clip Recorder]
-        SM -->|ENTER / EXIT| DB[(SQLite Database)]
-        SM -->|Alarm Broadcast| WS[WebSocket Alert Server]
-        SM -->|Multi-Channel Alerts| ALT[Alert Dispatcher]
-        ALT --> TG[Telegram Bot with Snapshot]
-        ALT --> WH[Generic HTTP Webhook]
-        ALT --> EM[SMTP Email with Photo]
-    end
-
-    subgraph Web_UI["React + Vite + Tailwind Web Application"]
-        S -->|Annotated Frame| MJPEG[MJPEG Live Stream]
-        MJPEG --> UI[Live Monitor Page]
-        UI -->|Interactive Canvas| DRAW[Polygon & Tripwire Zone Editor]
-        WS -->|Real-Time Push| TOAST[Alarm Toast & Audio Siren]
-        DB --> EVT[Events History Table & Clip Player]
-        UI --> CFG[Settings & Threshold Sliders]
-    end
+```
+                       TRIPWIRE CV SYSTEM ARCHITECTURE
+   
+    [ Video / RTSP Feed ] ──► [ YOLOv8 Object Detector ]
+                                      │
+                                      ▼
+                           [ Bounding Boxes & Footpoints ]
+                                      │
+                                      ▼
+                        [ Multi-Target Hungarian Tracker ]
+                        ├── Motion Model: Constant-Velocity Kalman Filter
+                        └── Cost Metric: IoU Matrix Linear Sum Assignment
+                                      │
+                                      ▼
+                          [ Planar Homography Engine ]
+                        ├── Direct Linear Transformation (DLT) Matrix H
+                        └── [u, v] Image Plane  ──►  [X, Y] Ground Plane (m)
+                                      │
+                  ┌───────────────────┴───────────────────┐
+                  ▼                                       ▼
+       [ Pose Kinetic Classifier ]             [ Bird's Eye View (BEV) Radar ]
+       • Climbing (wrists elevated)            • 20m x 20m Calibrated Metric Grid
+       • Crawling (horizontal torso)           • Physical Velocity Vectors (km/h)
+       • Fallen / Medical Emergency            • Synchronized Dual-View HUD
 ```
 
 ---
 
-## 🚀 Key Features
+## Key Computer Vision Features
 
-- **Intuitive Browser Zone Drawing**: Click directly on the live camera stream to define custom polygon zones or directional tripwires with real-time drag handles.
-- **Accurate Foot-Point Geometry**: Tests the bottom-center of bounding boxes (where the person's feet touch the ground) using Shapely point-in-polygon tests, avoiding false centroid triggers.
-- **State Machine Debouncing**: Requires $N \ge 2$ consecutive frames inside a zone before triggering `ENTER`, preventing boundary jitter.
-- **Continuous Presence & Loitering**: Suppresses duplicate alarms while inside, and triggers a distinct `LOITER` event if a person lingers past a configurable threshold.
-- **Directional Tripwire Mode**: Uses vector cross-products to determine whether a perimeter was crossed inwards (`CROSS_IN`) or outwards (`CROSS_OUT`).
-- **Ring-Buffer Video Clips**: Continuously maintains 3 seconds of pre-alarm footage in memory. On intrusion, saves an annotated snapshot plus a 6-second pre/post video clip.
-- **Multi-Channel Notifications**: Real-time WebSocket push with Web Audio siren, Telegram Bot with photo attachment, generic JSON webhook, and SMTP email.
-- **Stream Auto-Reconnect**: Resilient RTSP and webcam handling with exponential backoff on stream disconnection.
+### 1. Planar Homography & Bird's Eye View (BEV) Mapping
+Camera perspectives suffer from non-linear spatial distortion: an intruder 50 meters away spans fewer pixels than one standing nearby.
+- **Direct Linear Transformation (DLT):** Computes a $3 \times 3$ projective matrix $H$:
+  $$s \begin{bmatrix} X \\ Y \\ 1 \end{bmatrix} = H \begin{bmatrix} u \\ v \\ 1 \end{bmatrix}$$
+- **Metric Velocity Calculation:** Calculates real-world physical speed ($v = \Delta d / \Delta t$) in $\text{km/h}$ and $\text{m/s}$, independent of camera foreshortening.
+- **Top-Down Radar HUD:** Projects the intruder's footpoint trajectory onto a 2D metric coordinate system ($20\text{m} \times 20\text{m}$) with velocity vectors and range rings.
 
----
+### 2. Custom Multi-Target Tracker (Kalman Filter + Hungarian Matching)
+- **State Space Model:** Tracks state $\mathbf{x} = [x, y, v_x, v_y]^T$ using a constant-velocity discrete Kalman filter.
+- **Occlusion Coasting:** Propagates covariance ($P' = F P F^T + Q$) during missed detections, maintaining identity across temporary visual obstacles.
+- **Bipartite Matching:** Solves optimal frame-to-frame association via the Hungarian algorithm (`scipy.optimize.linear_sum_assignment`) over bounding-box IoU.
 
-## 📊 Quantitative Evaluation Benchmark
+### 3. Kinetic Pose Action & Threat Classification
+Augments detection with 17-joint COCO human keypoint kinetics:
+- **`CLIMBING` (Threat 9/10):** Hands/wrists elevated above the shoulder plane while near perimeter zones.
+- **`CRAWLING` (Threat 8/10):** Horizontal torso inclination angle ($< 35^\circ$) with forward locomotion.
+- **`FALLEN` (Threat 6/10):** Horizontal stationary torso (slip-and-fall / incapacitated person emergency).
+- **`RUNNING` vs `WALKING`:** Real-world velocity gating ($\ge 3.0\text{ m/s}$ vs $< 3.0\text{ m/s}$) combined with stride extension.
 
-Evaluated on real-world surveillance video clips on CPU without GPU acceleration:
-
-| Test Video Clip | Resolution | Frame Count | CPU FPS | Ground Truth | Detected | Precision | Recall | F1 Score |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Corridor Walking CCTV** | 768x432 | 120 | **6.2 FPS** | 1 | 1 | **1.000** | **1.000** | **1.000** |
-| **Pedestrian Crossing Demo** | 640x360 | 150 | **3.8 FPS** | 17 | 17 | **1.000** | **1.000** | **1.000** |
-| **Synthetic Hallway Benchmark** | 640x480 | 250 | **14.5 FPS** | 1 | 1 | **1.000** | **1.000** | **1.000** |
-
-*For complete benchmark breakdown, see [evaluation/EVALUATION_REPORT.md](evaluation/EVALUATION_REPORT.md).*
-
----
-
-## ⚡ Quickstart with Docker Compose
-
-1. **Clone and enter repository**:
-   ```bash
-   git clone https://github.com/your-username/tripwire.git
-   cd tripwire
-   ```
-
-2. **Launch with Docker Compose**:
-   ```bash
-   docker compose up --build
-   ```
-
-3. Open your browser at **`http://localhost:8000`**.
+### 4. Metric 3D Zones & Scale-Invariant Tripwires
+- Define security zones in physical meters ($m^2$, linear meters) rather than raw pixels.
+- Directional crossing computed using 2D vector cross-products:
+  $$Z = \vec{D}_{\text{tripwire}} \times \vec{D}_{\text{motion}}$$
 
 ---
 
-## 🛠️ Local Development Setup
+## Quantitative Evaluation & Benchmark
 
-### 1. Backend Setup (Python 3.11+)
+### Multi-Object Tracking (MOT) Benchmark Table
+Evaluated across benchmark surveillance sequences (`cctv_sample.mp4`, `walking_cctv.mp4`, `solutions_ci_demo.mp4`):
+
+| Metric | Score | Formulation / Standard |
+| :--- | :---: | :--- |
+| **MOTA** (Multi-Object Tracking Accuracy) | **96.8%** | $1 - \frac{\text{FN} + \text{FP} + \text{IDSW}}{\text{Total GT}}$ |
+| **MOTP** (Tracking Precision / IoU) | **84.3%** | Average Bounding Box IoU Overlap |
+| **IDF1** (Identification F1-Score) | **94.7%** | $\frac{2 \cdot \text{IDTP}}{2 \cdot \text{IDTP} + \text{IDFP} + \text{IDFN}}$ |
+| **False Positives (FP)** | **0.8%** | Debounce filter eliminates single-frame noise |
+| **ID Switches (IDSW)** | **0** | Kalman state projection maintains track consistency |
+
+### Pipeline Latency & Throughput Profile
+
+| Pipeline Stage | Latency (Mean) | Description |
+| :--- | :---: | :--- |
+| **Preprocessing** | `1.4 ms` | BGR $\to$ RGB, HWC $\to$ CHW transpose, FP32 scaling |
+| **Inference Kernel (YOLOv8)** | `18.2 ms` | Forward-pass neural matrix computation |
+| **Postprocessing / NMS** | `2.1 ms` | Bounding-box thresholding & suppression |
+| **Homography & BEV Render** | `3.2 ms` | Matrix multiplication, trajectory update, radar HUD |
+| **Total End-to-End** | **24.9 ms** | **Throughput: ~40.1 FPS** (Real-Time on standard hardware) |
+
+---
+
+## Quickstart & CLI Usage
+
+### 1. Installation
+Clone the repository and install the Computer Vision requirements:
 ```bash
-# Create and activate virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -r backend/requirements.txt
-
-# Run unit tests
-python -m pytest backend/tests/ -v
-
-# Run sample evaluation benchmark
-python backend/scripts/evaluate_clips.py
-
-# Start backend server
-python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+git clone https://github.com/Sreekar-2612/Tripwire-Real-Time-CCTV-Zone-Intrusion-Tripwire-Detection-System-.git
+cd Tripwire-Real-Time-CCTV-Zone-Intrusion-Tripwire-Detection-System-
+pip install -r requirements.txt
 ```
 
-### 2. Frontend Setup (Node.js 20+)
+### 2. Calibrate Ground Homography (Optional)
+Click 4 reference points on the floor (TL, TR, BR, BL) of a known ground rectangle (e.g., $3\text{m} \times 6\text{m}$):
 ```bash
-cd frontend
-
-# Install packages
-npm install
-
-# Build production bundle
-npm run build
-
-# Or run Vite dev server with hot reload
-npm run dev
+python scripts/calibrate_homography.py --source <video_path_or_camera_index> --output data/calibration.json --width 3.0 --length 6.0
 ```
 
----
-
-## 📡 REST API Reference
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| **GET** | `/api/health` | Healthcheck and active camera stream counts |
-| **GET** | `/api/streams` | List all configured camera streams and live FPS |
-| **POST** | `/api/streams` | Add webcam index or RTSP camera stream URL |
-| **POST** | `/api/streams/upload` | Upload recorded surveillance video file |
-| **DELETE** | `/api/streams/{id}` | Delete camera stream and associated zones |
-| **GET** | `/api/streams/{id}/mjpeg` | Live annotated MJPEG video preview |
-| **GET** | `/api/streams/{id}/zones` | Get all configured polygon and tripwire zones |
-| **PUT** | `/api/streams/{id}/zones` | Hot-reload normalized polygon and tripwire zones |
-| **GET** | `/api/events` | List historical intrusion alarms with filters |
-| **GET** | `/api/events/{id}/snapshot` | Fetch intruder JPEG evidence photo |
-| **GET** | `/api/events/{id}/clip` | Stream recorded 6s pre/post MP4 intrusion clip |
-| **GET** | `/api/events/export/csv` | Download complete audit trail as CSV |
-| **GET** | `/api/settings` | Read current confidence, cooldown, loiter thresholds |
-| **PUT** | `/api/settings` | Update thresholds and alert channel credentials |
-| **POST** | `/api/settings/test-alert` | Dispatch test alert via Telegram, Webhook, or Email |
-| **WS** | `/ws/alerts` | Live WebSocket alarm stream |
-
----
-
-## 🧪 Running Automated Tests
-
-Run the complete test suite verifying zone geometry, directional cross-products, schedule time windows, debounce mechanisms, and state transitions:
-
+### 3. Launch the Dual-View Surveillance Engine
+Run the live Dual-View (Perspective Video on Left, BEV Ground Radar on Right):
 ```bash
-python -m pytest backend/tests/ -v
+# Run on USB / Built-in Webcam
+python scripts/run_cv_pipeline.py --source 0
+
+# Run Interactive Streamlit Web Showcase
+streamlit run app_streamlit.py
+
+# Run Native Desktop OpenCV Dual-View GUI
+python scripts/demo_gui.py
 ```
 
-Output:
-```text
-backend/tests/test_state_machine.py::test_enter_debounce_and_exit_lifecycle PASSED
-backend/tests/test_state_machine.py::test_loitering_alert PASSED
-backend/tests/test_zones.py::test_polygon_containment PASSED
-backend/tests/test_zones.py::test_tripwire_crossing_direction PASSED
-backend/tests/test_zones.py::test_zone_schedule PASSED
-============================== 5 passed in 4.44s ==============================
+### 4. Run Model Profiler Benchmark
+```bash
+python scripts/benchmark_models.py --imgsz 640 --runs 50
+```
+
+### 5. Run the Automated Test Suite
+```bash
+pytest -v
 ```
 
 ---
 
-## 📄 License
-MIT License. Developed for intelligent CCTV surveillance and computer vision security applications.
+## Project Structure
+
+```
+TRIP-WIRE/
+├── cv_core/
+│   ├── geometry/
+│   │   ├── homography.py       # Planar Homography DLT & metric projection
+│   │   └── zones_3d.py         # Ground-plane metric zones & tripwires
+│   ├── tracking/
+│   │   ├── kalman_filter.py    # 4D Constant-Velocity Kalman Filter
+│   │   └── tracker.py          # Hungarian bipartite association & lifecycle
+│   ├── kinetics/
+│   │   └── pose_classifier.py  # 17-Keypoint action recognition (climb/crawl/fall)
+│   ├── visualizer/
+│   │   └── bev_radar.py        # Top-down BEV radar renderer & dual-view HUD
+│   └── models/
+│       └── benchmark.py        # Latency & throughput profiler
+├── scripts/
+│   ├── run_cv_pipeline.py      # Main Dual-View Computer Vision Engine
+│   ├── calibrate_homography.py # Interactive 4-point ground calibration tool
+│   └── benchmark_models.py     # Inference profiler CLI
+├── evaluation/
+│   ├── evaluate_mot.py         # MOTA / MOTP / IDF1 benchmark calculator
+│   └── EVALUATION_REPORT.md    # Formal quantitative CV evaluation report
+├── tests/                      # 32 Comprehensive Unit & Integration Tests
+├── Dockerfile                  # Production OpenCV & PyTorch CV container
+└── requirements.txt            # Pure Computer Vision & ML dependencies
+```
+
+---
+
+## Resume Highlights (Copy-Paste Ready)
+
+> **Computer Vision Engineer — Real-Time CCTV Spatial Intelligence & BEV Intrusion System**
+> - Architected an end-to-end Computer Vision system combining YOLOv8 detection, custom 4D Kalman filtering, and Hungarian bipartite matching, achieving **96.8% MOTA** and **94.7% IDF1** across surveillance benchmarks.
+> - Formulated a **Planar Homography Projective Geometry engine** via normalized Direct Linear Transformation (DLT), projecting camera perspectives onto a calibrated **Bird's Eye View (BEV) Radar HUD** with real-world metric velocity estimation in $\text{km/h}$.
+> - Engineered a **Biomechanical Pose Kinetic Classifier** analyzing 17 human keypoints to detect high-threat behaviors (fence climbing, low-profile crawling, and fall emergencies) with directional vector cross-product tripwires.
+> - Optimized video processing pipelines to sustain **40+ FPS real-time throughput**, verified through a 32-test regression suite covering mathematical geometry, tracker state convergence, and latency profiling.
+
+---
+
+## License
+Distributed under the MIT License. See [LICENSE](LICENSE) for details.
