@@ -232,6 +232,8 @@ def main():
             for trk in active_tracks:
                 w_pos = trk.get("world_pos")
                 is_breach = False
+                breach_reasons = []
+
                 if w_pos:
                     for z in zones:
                         if z.zone_type == "tripwire":
@@ -240,16 +242,20 @@ def main():
                                 crossing = z.check_tripwire_crossing(world_trail[-2], world_trail[-1])
                                 if crossing is not None:
                                     is_breach = True
-                                    breach_count += 1
+                                    breach_reasons.append(f"Crossed {z.name}")
                                     break
                         elif z.contains_point(w_pos[0], w_pos[1]):
                             is_breach = True
-                            breach_count += 1
+                            breach_reasons.append(f"Inside {z.name}")
                             break
 
                 speed_kmh = float(trk.get("speed", 0.0))
                 if speed_kmh > speed_alarm:
                     is_breach = True
+                    breach_reasons.append(f"Speeding ({speed_kmh:.1f}km/h)")
+
+                if is_breach:
+                    breach_count += 1
 
                 radar_tracks.append({
                     "track_id": trk["track_id"],
@@ -264,7 +270,11 @@ def main():
                 x1, y1, x2, y2 = map(int, trk["bbox"])
                 color = (0, 0, 255) if is_breach else (0, 240, 255)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(frame, f"#{trk['track_id']} | {speed_kmh:.1f}km/h", (x1, max(16, y1 - 8)),
+                
+                tag_label = f"#{trk['track_id']} | {speed_kmh:.1f}km/h"
+                if breach_reasons:
+                    tag_label += f" ⚠️ {breach_reasons[0]}"
+                cv2.putText(frame, tag_label, (x1, max(16, y1 - 8)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
             # BEV Radar
