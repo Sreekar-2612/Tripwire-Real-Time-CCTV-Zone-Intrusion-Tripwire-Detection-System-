@@ -208,13 +208,38 @@ def main():
 
             frame_count += 1
 
-            # Grid Projection
-            if show_grid and transformer.is_calibrated:
-                segments = transformer.project_ground_grid_to_image(frame.shape[:2], grid_step_m=2.0)
-                grid_overlay = frame.copy()
-                for pt1, pt2 in segments:
-                    cv2.line(grid_overlay, pt1, pt2, (60, 80, 90), 1, cv2.LINE_AA)
-                cv2.addWeighted(grid_overlay, 0.4, frame, 0.6, 0, frame)
+            # Grid & Security Zone Projection on Camera View
+            if transformer.is_calibrated:
+                if show_grid:
+                    segments = transformer.project_ground_grid_to_image(frame.shape[:2], grid_step_m=2.0)
+                    grid_overlay = frame.copy()
+                    for pt1, pt2 in segments:
+                        cv2.line(grid_overlay, pt1, pt2, (60, 80, 90), 1, cv2.LINE_AA)
+                    cv2.addWeighted(grid_overlay, 0.4, frame, 0.6, 0, frame)
+
+                # Project restricted zones and tripwires directly onto camera floor
+                for z in zones:
+                    if z.zone_type == "polygon":
+                        try:
+                            pts = [transformer.world_to_image(x, y) for x, y in z.world_coords]
+                            pts_np = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+                            overlay = frame.copy()
+                            cv2.fillPoly(overlay, [pts_np], (0, 140, 255))
+                            cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
+                            cv2.polylines(frame, [pts_np], True, (0, 165, 255), 2, cv2.LINE_AA)
+                            cv2.putText(frame, z.name, (int(pts[3][0]) + 10, int(pts[3][1]) + 20),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 255), 2, cv2.LINE_AA)
+                        except Exception:
+                            pass
+                    elif z.zone_type == "tripwire":
+                        try:
+                            p1 = transformer.world_to_image(*z.world_coords[0])
+                            p2 = transformer.world_to_image(*z.world_coords[1])
+                            cv2.line(frame, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), (0, 0, 255), 2, cv2.LINE_AA)
+                            cv2.putText(frame, z.name, (int(p1[0]) + 15, int(p1[1]) - 6),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2, cv2.LINE_AA)
+                        except Exception:
+                            pass
 
             # Detection with dynamically updated conf_thresh
             results = detector(frame, classes=[0], conf=conf_thresh, verbose=False)
