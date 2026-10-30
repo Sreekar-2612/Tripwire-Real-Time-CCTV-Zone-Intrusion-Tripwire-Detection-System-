@@ -25,12 +25,14 @@ app = FastAPI(title="Tripwire CV Live Demo Showcase")
 class WebStreamEngine:
     def __init__(self):
         self.videos = {
+            "template_tripwire": "data/videos/corridor_tripwire_breach.mp4",
+            "template_speed": "data/videos/high_speed_fleeing_breach.mp4",
             "walking": "data/videos/walking_cctv.mp4",
             "hallway": "data/videos/cctv_sample.mp4",
             "crossing": "data/videos/solutions_ci_demo.mp4",
             "webcam": "0"
         }
-        self.active_feed = "walking"
+        self.active_feed = "template_tripwire"
         self.conf = 0.35
         self.detector = YOLO("yolov8n.pt")
         self.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
@@ -43,8 +45,8 @@ class WebStreamEngine:
             self.transformer.set_homography(np.eye(3))
 
         self.zones = [
-            MetricZone3D("z1", "RESTRICTED VAULT", "polygon", [(3.0, 3.0), (12.0, 3.0), (12.0, 10.0), (3.0, 10.0)]),
-            MetricZone3D("tw1", "PERIMETER FENCE", "tripwire", [(0.0, 6.0), (16.0, 6.0)])
+            MetricZone3D("z1", "RESTRICTED VAULT", "polygon", [(3.5, 1.2), (7.5, 1.2), (7.5, 2.8), (3.5, 2.8)]),
+            MetricZone3D("tw1", "PERIMETER FENCE", "tripwire", [(2.0, 2.2), (8.0, 2.2)])
         ]
         self.lock = threading.Lock()
         self.cap = None
@@ -173,10 +175,12 @@ HTML_PAGE = """
     <div class="controls">
       <label for="feed">Feed:</label>
       <select id="feed" onchange="changeFeed(this.value)">
-        <option value="walking">Walking Corridor CCTV</option>
+        <option value="template_tripwire">Template: Corridor Tripwire Crossing Breach</option>
+        <option value="template_speed">Template: High-Speed Fleeing Breach</option>
+        <option value="walking">Walking Corridor CCTV (Full 60s)</option>
         <option value="hallway">Hallway Intrusion</option>
         <option value="crossing">Pedestrian Crossing</option>
-        <option value="webcam">Live USB Webcam</option>
+        <option value="webcam">Live USB / Laptop Webcam</option>
       </select>
     </div>
   </div>

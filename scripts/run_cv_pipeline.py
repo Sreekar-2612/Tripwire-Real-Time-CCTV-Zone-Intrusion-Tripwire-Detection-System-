@@ -50,8 +50,8 @@ def run_cv_engine(
 
     # Example Metric Ground Zones (in meters)
     ground_zones = [
-        MetricZone3D("z1", "SECURE ZONE", "polygon", [(3.0, 3.0), (12.0, 3.0), (12.0, 10.0), (3.0, 10.0)]),
-        MetricZone3D("tw1", "PERIMETER WIRE", "tripwire", [(0.0, 6.0), (15.0, 6.0)])
+        MetricZone3D("z1", "RESTRICTED VAULT", "polygon", [(3.5, 1.2), (7.5, 1.2), (7.5, 2.8), (3.5, 2.8)]),
+        MetricZone3D("tw1", "PERIMETER FENCE", "tripwire", [(2.0, 2.2), (8.0, 2.2)])
     ]
 
     # Open Video Capture

@@ -62,7 +62,9 @@ def main():
     feed_option = st.sidebar.selectbox(
         "Select Video Feed",
         [
-            "Walking Corridor CCTV",
+            "Template: Corridor Tripwire Crossing (Breach Demo)",
+            "Template: High-Speed Fleeing Intruder (Alarm Demo)",
+            "Walking Corridor CCTV (Full 60s)",
             "Hallway Intrusion",
             "Pedestrian Crossing",
             "Live Laptop Camera (Webcam 0)",
@@ -72,7 +74,11 @@ def main():
     )
 
     video_path = None
-    if feed_option == "Walking Corridor CCTV":
+    if feed_option == "Template: Corridor Tripwire Crossing (Breach Demo)":
+        video_path = "data/videos/corridor_tripwire_breach.mp4"
+    elif feed_option == "Template: High-Speed Fleeing Intruder (Alarm Demo)":
+        video_path = "data/videos/high_speed_fleeing_breach.mp4"
+    elif feed_option == "Walking Corridor CCTV (Full 60s)":
         video_path = "data/videos/walking_cctv.mp4"
     elif feed_option == "Hallway Intrusion":
         video_path = "data/videos/cctv_sample.mp4"
@@ -183,8 +189,8 @@ def main():
             transformer.set_homography(np.eye(3))
 
         zones = [
-            MetricZone3D("z1", "RESTRICTED VAULT", "polygon", [(3.0, 3.0), (12.0, 3.0), (12.0, 10.0), (3.0, 10.0)]),
-            MetricZone3D("tw1", "PERIMETER FENCE", "tripwire", [(0.0, 6.0), (16.0, 6.0)])
+            MetricZone3D("z1", "RESTRICTED VAULT", "polygon", [(3.5, 1.2), (7.5, 1.2), (7.5, 2.8), (3.5, 2.8)]),
+            MetricZone3D("tw1", "PERIMETER FENCE", "tripwire", [(2.0, 2.2), (8.0, 2.2)])
         ]
 
         frame_count = 0
