@@ -35,9 +35,15 @@ def main():
         initial_sidebar_state="expanded"
     )
 
-    # Session State Initialization
+    # Session State Initialization for Persistent Hardware / Stream Handles
     if "is_running" not in st.session_state:
         st.session_state.is_running = False
+    if "cap" not in st.session_state:
+        st.session_state.cap = None
+    if "current_feed" not in st.session_state:
+        st.session_state.current_feed = None
+    if "tracker" not in st.session_state:
+        st.session_state.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
 
     # Custom styling
     st.markdown("""
@@ -95,9 +101,18 @@ def main():
     with col_btn1:
         if st.button("▶️ Start Live", type="primary", use_container_width=True):
             st.session_state.is_running = True
+            st.rerun()
     with col_btn2:
         if st.button("⏹️ Stop Feed", use_container_width=True):
             st.session_state.is_running = False
+            if st.session_state.cap is not None:
+                try:
+                    st.session_state.cap.release()
+                except Exception:
+                    pass
+                st.session_state.cap = None
+            st.session_state.current_feed = None
+            st.rerun()
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("**CV Algorithms Active:**")
@@ -109,13 +124,13 @@ def main():
 
     # Dynamic Top Metric Banners
     col1, col2, col3, col4 = st.columns(4)
-    metric_mota = col1.empty()
+    metric_conf = col1.empty()
     metric_fps = col2.empty()
     metric_tracks = col3.empty()
     metric_breaches = col4.empty()
 
     # Initial static placeholders
-    metric_mota.metric("Detection Confidence", f"{conf_thresh * 100:.0f}%", "Active Filter")
+    metric_conf.metric("Detection Confidence", f"{conf_thresh * 100:.0f}%", "Active Filter")
     metric_fps.metric("Processing Speed", "Standby", "0.0 FPS")
     metric_tracks.metric("Active Targets", "0", "Awaiting Feed")
     metric_breaches.metric("Intrusion Breaches", "0", "Secure")
@@ -126,22 +141,38 @@ def main():
     dual_view_placeholder = st.empty()
     status_text = st.empty()
 
+    # Handle Feed Switching or First-Time Initialization
+    feed_changed = (st.session_state.current_feed != video_path)
+    if feed_changed and st.session_state.cap is not None:
+        try:
+            st.session_state.cap.release()
+        except Exception:
+            pass
+        st.session_state.cap = None
+        st.session_state.current_feed = video_path
+        st.session_state.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
+
     if st.session_state.is_running and video_path is not None:
-        if isinstance(video_path, int):
-            # DirectShow on Windows for instant webcam opening
-            cap = cv2.VideoCapture(video_path, cv2.CAP_DSHOW)
-            if not cap.isOpened():
+        # Open video capture only if not already open (avoids device re-initialization lag)
+        if st.session_state.cap is None or not st.session_state.cap.isOpened():
+            if isinstance(video_path, int):
+                cap = cv2.VideoCapture(video_path, cv2.CAP_DSHOW)
+                if not cap.isOpened():
+                    cap = cv2.VideoCapture(video_path)
+            else:
                 cap = cv2.VideoCapture(video_path)
-        else:
-            cap = cv2.VideoCapture(video_path)
 
-        if not cap.isOpened():
-            status_text.error(f"❌ Failed to open video source or camera ({video_path}). Please check if your camera is in use by another app.")
-            st.session_state.is_running = False
-            return
+            if not cap.isOpened():
+                status_text.error(f"❌ Could not open video source or camera ({video_path}). Please verify camera is connected and not locked by another application.")
+                st.session_state.is_running = False
+                return
 
+            st.session_state.cap = cap
+            st.session_state.current_feed = video_path
+
+        cap = st.session_state.cap
         detector = get_detector()
-        tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
+        tracker = st.session_state.tracker
         radar = BEVRadarRenderer(radar_size=480, world_extent_m=20.0, grid_step_m=2.0)
         
         transformer = HomographyTransformer()
@@ -159,105 +190,106 @@ def main():
         frame_count = 0
         t0 = time.time()
 
-        try:
-            while st.session_state.is_running and cap.isOpened():
-                ret, frame = cap.read()
+        # Continuous processing loop
+        while st.session_state.is_running and cap.isOpened():
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                if isinstance(video_path, str) and not video_path.isdigit():
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, frame = cap.read()
                 if not ret or frame is None:
-                    if isinstance(video_path, str) and not video_path.isdigit():
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                        ret, frame = cap.read()
-                    if not ret or frame is None:
-                        break
+                    break
 
-                frame_count += 1
+            frame_count += 1
 
-                # Grid Projection
-                if show_grid and transformer.is_calibrated:
-                    segments = transformer.project_ground_grid_to_image(frame.shape[:2], grid_step_m=2.0)
-                    grid_overlay = frame.copy()
-                    for pt1, pt2 in segments:
-                        cv2.line(grid_overlay, pt1, pt2, (60, 80, 90), 1, cv2.LINE_AA)
-                    cv2.addWeighted(grid_overlay, 0.4, frame, 0.6, 0, frame)
+            # Grid Projection
+            if show_grid and transformer.is_calibrated:
+                segments = transformer.project_ground_grid_to_image(frame.shape[:2], grid_step_m=2.0)
+                grid_overlay = frame.copy()
+                for pt1, pt2 in segments:
+                    cv2.line(grid_overlay, pt1, pt2, (60, 80, 90), 1, cv2.LINE_AA)
+                cv2.addWeighted(grid_overlay, 0.4, frame, 0.6, 0, frame)
 
-                # Detection
-                results = detector(frame, classes=[0], conf=conf_thresh, verbose=False)
-                detections = []
-                for r in results:
-                    if r.boxes is not None:
-                        for box in r.boxes:
-                            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                            conf = float(box.conf[0].cpu().numpy())
-                            detections.append({
-                                "bbox": [float(x1), float(y1), float(x2), float(y2)],
-                                "confidence": conf,
-                                "foot_point": ((x1 + x2) / 2.0, float(y2))
-                            })
+            # Detection with dynamically updated conf_thresh
+            results = detector(frame, classes=[0], conf=conf_thresh, verbose=False)
+            detections = []
+            for r in results:
+                if r.boxes is not None:
+                    for box in r.boxes:
+                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                        conf = float(box.conf[0].cpu().numpy())
+                        detections.append({
+                            "bbox": [float(x1), float(y1), float(x2), float(y2)],
+                            "confidence": conf,
+                            "foot_point": ((x1 + x2) / 2.0, float(y2))
+                        })
 
-                # Tracking
-                active_tracks = tracker.update(detections, homography_transformer=transformer)
-                radar_tracks = []
-                breach_count = 0
+            # Tracking
+            active_tracks = tracker.update(detections, homography_transformer=transformer)
+            radar_tracks = []
+            breach_count = 0
 
-                for trk in active_tracks:
-                    w_pos = trk.get("world_pos")
-                    is_breach = False
-                    if w_pos:
-                        for z in zones:
-                            if z.zone_type == "tripwire":
-                                world_trail = trk.get("world_trail", [])
-                                if len(world_trail) >= 2:
-                                    crossing = z.check_tripwire_crossing(world_trail[-2], world_trail[-1])
-                                    if crossing is not None:
-                                        is_breach = True
-                                        breach_count += 1
-                                        break
-                            elif z.contains_point(w_pos[0], w_pos[1]):
-                                is_breach = True
-                                breach_count += 1
-                                break
+            for trk in active_tracks:
+                w_pos = trk.get("world_pos")
+                is_breach = False
+                if w_pos:
+                    for z in zones:
+                        if z.zone_type == "tripwire":
+                            world_trail = trk.get("world_trail", [])
+                            if len(world_trail) >= 2:
+                                crossing = z.check_tripwire_crossing(world_trail[-2], world_trail[-1])
+                                if crossing is not None:
+                                    is_breach = True
+                                    breach_count += 1
+                                    break
+                        elif z.contains_point(w_pos[0], w_pos[1]):
+                            is_breach = True
+                            breach_count += 1
+                            break
 
-                    speed_kmh = float(trk.get("speed", 0.0))
-                    if speed_kmh > speed_alarm:
-                        is_breach = True
+                speed_kmh = float(trk.get("speed", 0.0))
+                if speed_kmh > speed_alarm:
+                    is_breach = True
 
-                    radar_tracks.append({
-                        "track_id": trk["track_id"],
-                        "world_pos": w_pos,
-                        "world_trail": trk.get("world_trail", []),
-                        "speed_kmh": speed_kmh,
-                        "vx": trk.get("vx", 0.0),
-                        "vy": trk.get("vy", 0.0),
-                        "is_breaching": is_breach
-                    })
+                radar_tracks.append({
+                    "track_id": trk["track_id"],
+                    "world_pos": w_pos,
+                    "world_trail": trk.get("world_trail", []),
+                    "speed_kmh": speed_kmh,
+                    "vx": trk.get("vx", 0.0),
+                    "vy": trk.get("vy", 0.0),
+                    "is_breaching": is_breach
+                })
 
-                    x1, y1, x2, y2 = map(int, trk["bbox"])
-                    color = (0, 0, 255) if is_breach else (0, 240, 255)
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                    cv2.putText(frame, f"#{trk['track_id']} | {speed_kmh:.1f}km/h", (x1, max(16, y1 - 8)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+                x1, y1, x2, y2 = map(int, trk["bbox"])
+                color = (0, 0, 255) if is_breach else (0, 240, 255)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(frame, f"#{trk['track_id']} | {speed_kmh:.1f}km/h", (x1, max(16, y1 - 8)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
-                # BEV Radar
-                radar_img = radar.render(zones, radar_tracks)
-                dual_view = BEVRadarRenderer.create_dual_view(frame, radar_img)
+            # BEV Radar
+            radar_img = radar.render(zones, radar_tracks)
+            dual_view = BEVRadarRenderer.create_dual_view(frame, radar_img)
 
-                # Downsample to 1280x480 for fast WebSocket transmission without DOM saturation
-                dual_view_resized = cv2.resize(dual_view, (1280, 480), interpolation=cv2.INTER_AREA)
-                dual_view_rgb = cv2.cvtColor(dual_view_resized, cv2.COLOR_BGR2RGB)
-                dual_view_placeholder.image(dual_view_rgb, channels="RGB", use_container_width=True)
+            # Downsample to 1280x480 for fast WebSocket transmission without DOM saturation
+            dual_view_resized = cv2.resize(dual_view, (1280, 480), interpolation=cv2.INTER_AREA)
+            dual_view_rgb = cv2.cvtColor(dual_view_resized, cv2.COLOR_BGR2RGB)
+            dual_view_placeholder.image(dual_view_rgb, channels="RGB", use_container_width=True)
 
-                elapsed = time.time() - t0
-                fps = frame_count / max(0.001, elapsed)
+            elapsed = time.time() - t0
+            fps = frame_count / max(0.001, elapsed)
 
-                # Dynamically update live metrics
-                metric_mota.metric("Detection Confidence", f"{conf_thresh * 100:.0f}%", "Active Filter")
-                metric_fps.metric("Processing Speed", f"{fps:.1f} FPS", "Real-Time" if fps >= 20 else "Processing")
-                metric_tracks.metric("Active Targets", f"{len(active_tracks)}", f"{len(active_tracks)} in camera frame")
-                metric_breaches.metric("Intrusion Breaches", f"{breach_count}", "ALARM ACTIVE" if breach_count > 0 else "Secure")
+            # Dynamically update live metrics
+            metric_conf.metric("Detection Confidence", f"{conf_thresh * 100:.0f}%", "Hot Reload")
+            metric_fps.metric("Processing Speed", f"{fps:.1f} FPS", "Real-Time" if fps >= 18 else "Processing")
+            metric_tracks.metric("Active Targets", f"{len(active_tracks)}", f"{len(active_tracks)} in camera frame")
+            metric_breaches.metric("Intrusion Breaches", f"{breach_count}", "ALARM ACTIVE" if breach_count > 0 else "Secure")
 
-                status_text.info(f"⚡ Processing FPS: **{fps:.1f}** | Active Targets: **{len(active_tracks)}** | Breaches Detected: **{breach_count}**")
+            status_text.info(f"⚡ Processing FPS: **{fps:.1f}** | Active Targets: **{len(active_tracks)}** | Breaches Detected: **{breach_count}** | Feed: **{feed_option}**")
 
-        finally:
-            cap.release()
+            # Yield control briefly so Streamlit UI thread processes slider changes smoothly
+            time.sleep(0.015)
+
     elif not st.session_state.is_running:
         status_text.warning("⏸️ Surveillance pipeline is paused. Click **▶️ Start Live** in the sidebar to run.")
 
