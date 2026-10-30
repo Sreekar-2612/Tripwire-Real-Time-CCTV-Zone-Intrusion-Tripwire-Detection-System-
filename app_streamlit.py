@@ -44,6 +44,10 @@ def main():
         st.session_state.current_feed = None
     if "tracker" not in st.session_state:
         st.session_state.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
+    if "dwell_history" not in st.session_state:
+        st.session_state.dwell_history = {}
+    if "tripwire_latches" not in st.session_state:
+        st.session_state.tripwire_latches = {}
 
     # Custom styling
     st.markdown("""
@@ -100,6 +104,20 @@ def main():
 
     conf_thresh = st.sidebar.slider("Detection Confidence", min_value=0.1, max_value=0.9, value=0.35, step=0.05)
     speed_alarm = st.sidebar.slider("Speed Alarm Threshold (km/h)", min_value=1.0, max_value=25.0, value=5.0, step=0.5)
+    dwell_confirm_sec = st.sidebar.slider(
+        "Breach Dwell / Debounce (sec)",
+        min_value=0.0,
+        max_value=4.0,
+        value=1.5,
+        step=0.5,
+        help="Target must linger inside zone for this duration to confirm breach. Prevents false alarms during normal transit."
+    )
+    zone_preset = st.sidebar.radio(
+        "Security Zone Layout",
+        ["Realistic Security (Side Vault & Checkpoint)", "Demo Stress Test (Center Hallway)"],
+        index=0,
+        help="Realistic layout monitors off-limits doors/alcoves. Stress test places the zone in the center walkway."
+    )
     show_grid = st.sidebar.checkbox("Project Perspective Ground Grid", value=True)
 
     st.sidebar.markdown("---")
@@ -188,10 +206,33 @@ def main():
         else:
             transformer.set_homography(np.eye(3))
 
-        zones = [
-            MetricZone3D("z1", "RESTRICTED VAULT", "polygon", [(3.5, 1.2), (7.5, 1.2), (7.5, 2.8), (3.5, 2.8)]),
-            MetricZone3D("tw1", "PERIMETER FENCE", "tripwire", [(2.0, 2.2), (8.0, 2.2)])
-        ]
+        if zone_preset == "Demo Stress Test (Center Hallway)":
+            zones = [
+                MetricZone3D("z1", "RESTRICTED VAULT (CENTER HALL)", "polygon", [(3.5, 1.2), (7.5, 1.2), (7.5, 2.8), (3.5, 2.8)]),
+                MetricZone3D("tw1", "PERIMETER FENCE", "tripwire", [(2.0, 2.2), (8.0, 2.2)])
+            ]
+        else:  # Realistic Security (Side Vault & Checkpoint)
+            if "Pedestrian" in feed_option:
+                zones = [
+                    MetricZone3D("z_ped", "RESTRICTED PLAZA BUFFER", "polygon", [(4.0, 8.0), (16.0, 8.0), (16.0, 14.0), (4.0, 14.0)]),
+                    MetricZone3D("tw_ped", "CROSSWALK TRIPWIRE", "tripwire", [(2.0, 11.0), (18.0, 11.0)])
+                ]
+            elif "Laptop" in feed_option or "Webcam" in feed_option:
+                zones = [
+                    MetricZone3D("z_webcam", "RESTRICTED WORKSPACE", "polygon", [(2.0, 1.0), (8.0, 1.0), (8.0, 4.0), (2.0, 4.0)]),
+                    MetricZone3D("tw_webcam", "DESK TRIPWIRE", "tripwire", [(1.5, 2.5), (8.5, 2.5)])
+                ]
+            elif "High-Speed" in feed_option:
+                zones = [
+                    MetricZone3D("z_flee", "RESTRICTED VAULT", "polygon", [(5.5, 2.0), (9.0, 2.0), (9.0, 6.0), (5.5, 6.0)]),
+                    MetricZone3D("tw_flee", "PERIMETER TRIPWIRE", "tripwire", [(1.5, 3.8), (8.5, 3.8)])
+                ]
+            else:
+                # Walking corridor: place polygon on side doorway/office alcove, checkpoint across hallway
+                zones = [
+                    MetricZone3D("z_alcove", "RESTRICTED OFFICE VAULT", "polygon", [(6.0, 3.0), (9.5, 3.0), (9.5, 7.5), (6.0, 7.5)]),
+                    MetricZone3D("tw_chk", "CHECKPOINT TRIPWIRE", "tripwire", [(2.0, 4.5), (8.5, 4.5)])
+                ]
 
         frame_count = 0
         t0 = time.time()
@@ -259,10 +300,18 @@ def main():
             active_tracks = tracker.update(detections, homography_transformer=transformer)
             radar_tracks = []
             breach_count = 0
+            now_ts = time.time()
+            frame_dt = 1.0 / 20.0
+
+            dwell_map = st.session_state.dwell_history
+            trip_latches = st.session_state.tripwire_latches
+            current_active_pairs = set()
 
             for trk in active_tracks:
+                tid = trk["track_id"]
                 w_pos = trk.get("world_pos")
-                is_breach = False
+                is_confirmed_breach = False
+                is_monitoring = False
                 breach_reasons = []
 
                 if w_pos:
@@ -272,20 +321,35 @@ def main():
                             if len(world_trail) >= 2:
                                 crossing = z.check_tripwire_crossing(world_trail[-2], world_trail[-1])
                                 if crossing is not None:
-                                    is_breach = True
-                                    breach_reasons.append(f"Crossed {z.name}")
-                                    break
+                                    trip_latches[(tid, z.zone_id)] = now_ts
+                            
+                            # Check if recent crossing latch is still active (3.0 seconds alert window)
+                            latch_time = trip_latches.get((tid, z.zone_id), 0.0)
+                            if (now_ts - latch_time) < 3.0:
+                                is_confirmed_breach = True
+                                breach_reasons.append(f"Crossed {z.name}")
+                                break
                         elif z.contains_point(w_pos[0], w_pos[1]):
-                            is_breach = True
-                            breach_reasons.append(f"Inside {z.name}")
-                            break
+                            current_active_pairs.add((tid, z.zone_id))
+                            prev_dwell = dwell_map.get((tid, z.zone_id), 0.0)
+                            new_dwell = prev_dwell + frame_dt
+                            dwell_map[(tid, z.zone_id)] = new_dwell
+
+                            if new_dwell >= dwell_confirm_sec:
+                                is_confirmed_breach = True
+                                breach_reasons.append(f"Loitering in {z.name} ({new_dwell:.1f}s)")
+                                break
+                            else:
+                                is_monitoring = True
+                                breach_reasons.append(f"Inside {z.name} ({new_dwell:.1f}s / {dwell_confirm_sec:.1f}s)")
+                                break
 
                 speed_kmh = float(trk.get("speed", 0.0))
                 if speed_kmh > speed_alarm:
-                    is_breach = True
+                    is_confirmed_breach = True
                     breach_reasons.append(f"Speeding ({speed_kmh:.1f}km/h)")
 
-                if is_breach:
+                if is_confirmed_breach:
                     breach_count += 1
 
                 radar_tracks.append({
@@ -295,18 +359,36 @@ def main():
                     "speed_kmh": speed_kmh,
                     "vx": trk.get("vx", 0.0),
                     "vy": trk.get("vy", 0.0),
-                    "is_breaching": is_breach
+                    "is_breaching": is_confirmed_breach
                 })
 
                 x1, y1, x2, y2 = map(int, trk["bbox"])
-                color = (0, 0, 255) if is_breach else (0, 240, 255)
+                if is_confirmed_breach:
+                    color = (0, 0, 255)      # Red: Confirmed Intrusion Breach
+                    tag_prefix = "🚨"
+                elif is_monitoring:
+                    color = (0, 215, 255)    # Amber: Monitoring / Grace Period
+                    tag_prefix = "🟡"
+                else:
+                    color = (0, 255, 0)      # Green: Authorized Target
+                    tag_prefix = "🟢"
+
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                 
-                tag_label = f"#{trk['track_id']} | {speed_kmh:.1f}km/h"
+                tag_label = f"{tag_prefix} #{trk['track_id']} | {speed_kmh:.1f}km/h"
                 if breach_reasons:
-                    tag_label += f" ⚠️ {breach_reasons[0]}"
+                    tag_label += f" | {breach_reasons[0]}"
                 cv2.putText(frame, tag_label, (x1, max(16, y1 - 8)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.52, color, 2)
+
+            # Cleanup expired dwell times and latches
+            active_tids = {trk["track_id"] for trk in active_tracks}
+            for k in list(dwell_map.keys()):
+                if k[0] not in active_tids or k not in current_active_pairs:
+                    dwell_map.pop(k, None)
+            for k in list(trip_latches.keys()):
+                if k[0] not in active_tids or (now_ts - trip_latches[k]) > 4.0:
+                    trip_latches.pop(k, None)
 
             # BEV Radar
             radar_img = radar.render(zones, radar_tracks)
