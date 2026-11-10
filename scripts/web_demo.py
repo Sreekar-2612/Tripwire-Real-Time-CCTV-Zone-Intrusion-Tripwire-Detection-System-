@@ -11,6 +11,7 @@ if str(project_root) not in sys.path:
 
 import cv2
 import numpy as np
+import torch
 from fastapi import FastAPI, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 import uvicorn
@@ -161,8 +162,9 @@ class WebStreamEngine:
         is_pose_active = self.use_pose and (self.detector_pose is not None)
         active_detector = self.detector_pose if is_pose_active else self.detector_standard
 
-        # Down to 0.15 for ByteTrack Two-Stage Association
-        results = active_detector(frame, conf=0.15, verbose=False)
+        # Down to 0.15 for ByteTrack Two-Stage Association with torch inference mode and imgsz=480 for reduced latency
+        with torch.inference_mode():
+            results = active_detector(frame, conf=0.15, imgsz=480, verbose=False)
         detections = []
         for r in results:
             if r.boxes is not None:

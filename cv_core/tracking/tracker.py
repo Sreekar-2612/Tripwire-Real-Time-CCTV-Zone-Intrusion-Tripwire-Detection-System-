@@ -50,6 +50,42 @@ def compute_iou_matrix(boxes_a: np.ndarray, boxes_b: np.ndarray) -> np.ndarray:
     iou = inter_area / union_area
     return np.nan_to_num(iou, nan=0.0)
 
+def compute_diou_matrix(boxes_a: np.ndarray, boxes_b: np.ndarray) -> np.ndarray:
+    """
+    Computes Distance-IoU (DIoU) matrix between two sets of [x1, y1, x2, y2] boxes.
+    DIoU = IoU - (rho^2 / c^2)
+    where rho is Euclidean distance between box centers, and c is diagonal of the smallest enclosing box.
+    Returns (N, M) matrix with DIoU values in [-1.0, 1.0].
+    """
+    if len(boxes_a) == 0 or len(boxes_b) == 0:
+        return np.zeros((len(boxes_a), len(boxes_b)), dtype=np.float32)
+
+    boxes_a = np.asarray(boxes_a, dtype=np.float32)
+    boxes_b = np.asarray(boxes_b, dtype=np.float32)
+
+    iou = compute_iou_matrix(boxes_a, boxes_b)
+
+    # Centers of boxes
+    cx_a = (boxes_a[:, 0] + boxes_a[:, 2]) / 2.0
+    cy_a = (boxes_a[:, 1] + boxes_a[:, 3]) / 2.0
+    cx_b = (boxes_b[:, 0] + boxes_b[:, 2]) / 2.0
+    cy_b = (boxes_b[:, 1] + boxes_b[:, 3]) / 2.0
+
+    # Euclidean distance between centers: rho^2
+    d_center_sq = (cx_a[:, None] - cx_b[None, :]) ** 2 + (cy_a[:, None] - cy_b[None, :]) ** 2
+
+    # Smallest enclosing box
+    enc_x1 = np.minimum(boxes_a[:, None, 0], boxes_b[None, :, 0])
+    enc_y1 = np.minimum(boxes_a[:, None, 1], boxes_b[None, :, 1])
+    enc_x2 = np.maximum(boxes_a[:, None, 2], boxes_b[None, :, 2])
+    enc_y2 = np.maximum(boxes_a[:, None, 3], boxes_b[None, :, 3])
+
+    c_sq = (enc_x2 - enc_x1) ** 2 + (enc_y2 - enc_y1) ** 2
+    c_sq = np.maximum(c_sq, 1e-6)
+
+    diou = iou - (d_center_sq / c_sq)
+    return np.nan_to_num(diou, nan=-1.0)
+
 def linear_assignment_iou(
     tracks: List["SingleTrack"],
     detections: List[Dict[str, Any]],
@@ -57,6 +93,7 @@ def linear_assignment_iou(
 ) -> Tuple[List[Tuple[int, int]], List[int], List[int]]:
     """
     Solves optimal bipartite matching between tracks and detections using Hungarian assignment.
+    Combines DIoU distance affinity with IoU acceptance gating.
     Returns:
         matches: List of (track_idx, det_idx) pairs satisfying IoU >= iou_thresh
         unmatched_tracks: List of indices of tracks with no valid match
@@ -69,8 +106,10 @@ def linear_assignment_iou(
     det_boxes = np.array([d["bbox"] for d in detections], dtype=np.float32)
 
     iou_matrix = compute_iou_matrix(track_boxes, det_boxes)
-    cost_matrix = 1.0 - iou_matrix
-    cost_matrix = np.nan_to_num(cost_matrix, nan=1.0, posinf=1.0, neginf=1.0)
+    diou_matrix = compute_diou_matrix(track_boxes, det_boxes)
+    # DIoU cost matrix in [0, 2]: minimizes both bounding box overlap loss and center distance
+    cost_matrix = 1.0 - diou_matrix
+    cost_matrix = np.nan_to_num(cost_matrix, nan=2.0, posinf=2.0, neginf=2.0)
 
     row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
@@ -154,6 +193,7 @@ class SingleTrack:
         # Pose & Kinetic Attributes
         self.keypoints: Optional[np.ndarray] = None
         self.posture: str = "standing"
+        self.posture_history: List[str] = [self.posture]
         self.threat_level: int = 1
         self.pose_indicators: List[str] = []
 
@@ -255,11 +295,24 @@ class SingleTrack:
                 spd = float(np.hypot(self.metric_vx, self.metric_vy) * 3.6)
                 self.metric_speed = min(35.0, spd if np.isfinite(spd) else 0.0)
 
-        # Update pose attributes if available
+        # Update pose attributes with temporal majority smoothing
         if keypoints is not None:
             self.keypoints = np.asarray(keypoints, dtype=np.float32)
         if posture_info is not None:
-            self.posture = posture_info.get("posture", self.posture)
+            raw_p = posture_info.get("posture", self.posture)
+            self.posture_history.append(raw_p)
+            if len(self.posture_history) > 6:
+                self.posture_history.pop(0)
+
+            # High threat postures (climbing, crawling, fallen) take priority if observed in >= 2 frames
+            threats = [p for p in self.posture_history if p in ("climbing", "crawling", "fallen")]
+            if len(threats) >= 2:
+                from collections import Counter
+                self.posture = Counter(threats).most_common(1)[0][0]
+            else:
+                from collections import Counter
+                self.posture = Counter(self.posture_history).most_common(1)[0][0]
+
             self.threat_level = posture_info.get("threat_level", self.threat_level)
             self.pose_indicators = posture_info.get("indicators", self.pose_indicators)
 
@@ -311,17 +364,39 @@ class MultiTargetTracker:
         homography_transformer=None,
         pose_classifier=None
     ):
-        """Helper to transform coordinates and incorporate detection into a track."""
+        """Helper to transform coordinates and incorporate detection into a track with ankle ground refinement."""
+        foot_pt = det.get("foot_point", (0.0, 0.0))
+        keypoints = det.get("keypoints")
+
+        # Ankle-Refined Ground Contact Point:
+        # True physical ground contact is the midpoint of the ankles (COCO joints 15 & 16),
+        # which eliminates bounding box bottom noise from ground shadows or clothing.
+        if keypoints is not None:
+            try:
+                kpts_arr = np.asarray(keypoints, dtype=np.float32)
+                if kpts_arr.shape[0] >= 17:
+                    l_ank = kpts_arr[15]
+                    r_ank = kpts_arr[16]
+                    l_conf = l_ank[2] if len(l_ank) >= 3 else 1.0
+                    r_conf = r_ank[2] if len(r_ank) >= 3 else 1.0
+                    if l_conf >= 0.35 and r_conf >= 0.35:
+                        foot_pt = (float((l_ank[0] + r_ank[0]) / 2.0), float((l_ank[1] + r_ank[1]) / 2.0))
+                    elif l_conf >= 0.35:
+                        foot_pt = (float(l_ank[0]), float(l_ank[1]))
+                    elif r_conf >= 0.35:
+                        foot_pt = (float(r_ank[0]), float(r_ank[1]))
+            except Exception:
+                pass
+
         world_pt = None
         if homography_transformer and homography_transformer.is_calibrated:
             try:
                 world_pt = homography_transformer.image_to_world(
-                    det["foot_point"][0], det["foot_point"][1]
+                    foot_pt[0], foot_pt[1]
                 )
             except Exception:
                 world_pt = None
 
-        keypoints = det.get("keypoints")
         posture_info = det.get("posture_info")
         if posture_info is None and keypoints is not None:
             # Classify posture via pose_classifier or standalone helper
@@ -341,7 +416,7 @@ class MultiTargetTracker:
         trk.update(
             bbox=det["bbox"],
             confidence=det["confidence"],
-            foot_point=det["foot_point"],
+            foot_point=foot_pt,
             world_pt=world_pt,
             keypoints=keypoints,
             posture_info=posture_info
@@ -486,10 +561,27 @@ class MultiTargetTracker:
         # =========================================================================
         for i in unmatched_final_high_idx:
             det = lost_candidates_high[i]
+            foot_pt = det.get("foot_point", (0.0, 0.0))
+            if det.get("keypoints") is not None:
+                try:
+                    kpts_arr = np.asarray(det["keypoints"], dtype=np.float32)
+                    if kpts_arr.shape[0] >= 17:
+                        l_ank, r_ank = kpts_arr[15], kpts_arr[16]
+                        l_conf = l_ank[2] if len(l_ank) >= 3 else 1.0
+                        r_conf = r_ank[2] if len(r_ank) >= 3 else 1.0
+                        if l_conf >= 0.35 and r_conf >= 0.35:
+                            foot_pt = (float((l_ank[0] + r_ank[0]) / 2.0), float((l_ank[1] + r_ank[1]) / 2.0))
+                        elif l_conf >= 0.35:
+                            foot_pt = (float(l_ank[0]), float(l_ank[1]))
+                        elif r_conf >= 0.35:
+                            foot_pt = (float(r_ank[0]), float(r_ank[1]))
+                except Exception:
+                    pass
+
             new_track = SingleTrack(
                 bbox=det["bbox"],
                 confidence=det["confidence"],
-                foot_point=det["foot_point"],
+                foot_point=foot_pt,
                 dt=self.dt,
                 ema_alpha=self.ema_alpha
             )
@@ -498,7 +590,7 @@ class MultiTargetTracker:
             if homography_transformer and homography_transformer.is_calibrated:
                 try:
                     new_track.world_pos = homography_transformer.image_to_world(
-                        det["foot_point"][0], det["foot_point"][1]
+                        foot_pt[0], foot_pt[1]
                     )
                 except Exception:
                     pass

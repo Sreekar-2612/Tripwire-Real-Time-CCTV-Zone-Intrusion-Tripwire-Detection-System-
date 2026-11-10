@@ -4,6 +4,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pandas as pd
+import torch
 
 # Try importing streamlit
 try:
@@ -169,6 +170,12 @@ def main():
             video_path = str(temp_path)
 
     conf_thresh = st.sidebar.slider("Detection Confidence", min_value=0.1, max_value=0.9, value=0.35, step=0.05)
+    infer_imgsz = st.sidebar.select_slider(
+        "Inference Resolution (imgsz)",
+        options=[384, 480, 640],
+        value=480,
+        help="Lower resolutions (384p/480p) reduce neural compute latency by ~50% with near-identical person detection precision."
+    )
     speed_alarm = st.sidebar.slider("Speed Alarm Threshold (km/h)", min_value=1.0, max_value=25.0, value=5.0, step=0.5)
     dwell_confirm_sec = st.sidebar.slider(
         "Breach Dwell / Debounce (sec)",
@@ -368,7 +375,8 @@ def main():
 
             # Deep Visual Perception
             t_infer_start = time.time()
-            results = detector(frame, classes=[0], conf=conf_thresh, verbose=False)
+            with torch.inference_mode():
+                results = detector(frame, classes=[0], conf=conf_thresh, imgsz=infer_imgsz, verbose=False)
             t_infer_end = time.time()
             infer_ms = (t_infer_end - t_infer_start) * 1000.0
 
