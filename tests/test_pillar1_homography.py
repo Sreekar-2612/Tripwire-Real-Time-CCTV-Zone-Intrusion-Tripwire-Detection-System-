@@ -148,3 +148,33 @@ def test_homography_json_serialization_roundtrip():
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
+
+def test_homography_projective_singularity():
+    """Verify that points mapping to infinity (zero denominator) raise ZeroDivisionError."""
+    # Construct an H matrix where for (10, 0), denominator = 0 * 10 + 0 * 0 + 0 = 0
+    H = np.array([
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, -10.0]  # At u=10, v=0 -> denom = 10 - 10 = 0
+    ])
+    transformer = HomographyTransformer(H_matrix=H)
+    with pytest.raises(ZeroDivisionError):
+        transformer.image_to_world(10.0, 0.0)
+
+def test_homography_reprojection_error_zero_for_identity():
+    """Verify reprojection error calculation on identity transformation."""
+    H = np.eye(3, dtype=np.float64)
+    transformer = HomographyTransformer(H_matrix=H)
+    pts = [(1.0, 2.0), (3.0, 4.0), (5.0, 6.0)]
+    err = transformer.compute_reprojection_error(pts, pts)
+    assert np.isclose(err, 0.0, atol=1e-6)
+
+def test_metric_zone_tripwire_no_crossing_for_collinear_or_disjoint():
+    """Verify that non-crossing or parallel segments return None."""
+    coords = [(0.0, 5.0), (10.0, 5.0)]
+    wire = MetricZone3D("tw_collinear", "Tripwire", "tripwire", coords)
+    # Movement entirely on one side
+    assert wire.check_tripwire_crossing((1.0, 2.0), (9.0, 2.0)) is None
+    # Movement collinear with line
+    assert wire.check_tripwire_crossing((1.0, 5.0), (8.0, 5.0)) is None
+

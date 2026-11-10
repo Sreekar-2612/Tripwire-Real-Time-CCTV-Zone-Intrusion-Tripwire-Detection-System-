@@ -1,9 +1,18 @@
 from enum import Enum
-from typing import List, Tuple, Dict, Optional, Any
+from typing import List, Tuple, Dict, Optional, Any, TYPE_CHECKING
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
+if TYPE_CHECKING:
+    from cv_core.geometry.homography import HomographyTransformer
+
 from cv_core.tracking.kalman_filter import KalmanFilter2D
+from cv_core.kinetics.pose_classifier import (
+    PostureType,
+    PoseKineticClassifier,
+    classify_keypoints_posture,
+    draw_pose_skeleton
+)
 
 class TrackState(Enum):
     TENTATIVE = "tentative"
@@ -22,8 +31,12 @@ def compute_iou_matrix(boxes_a: np.ndarray, boxes_b: np.ndarray) -> np.ndarray:
     boxes_a = np.asarray(boxes_a, dtype=np.float32)
     boxes_b = np.asarray(boxes_b, dtype=np.float32)
 
-    area_a = (boxes_a[:, 2] - boxes_a[:, 0]) * (boxes_a[:, 3] - boxes_a[:, 1])
-    area_b = (boxes_b[:, 2] - boxes_b[:, 0]) * (boxes_b[:, 3] - boxes_b[:, 1])
+    if not np.all(np.isfinite(boxes_a)) or not np.all(np.isfinite(boxes_b)):
+        boxes_a = np.nan_to_num(boxes_a, nan=0.0, posinf=1e5, neginf=0.0)
+        boxes_b = np.nan_to_num(boxes_b, nan=0.0, posinf=1e5, neginf=0.0)
+
+    area_a = np.maximum(0.0, (boxes_a[:, 2] - boxes_a[:, 0])) * np.maximum(0.0, (boxes_a[:, 3] - boxes_a[:, 1]))
+    area_b = np.maximum(0.0, (boxes_b[:, 2] - boxes_b[:, 0])) * np.maximum(0.0, (boxes_b[:, 3] - boxes_b[:, 1]))
 
     top_left = np.maximum(boxes_a[:, None, :2], boxes_b[None, :, :2])
     bottom_right = np.minimum(boxes_a[:, None, 2:], boxes_b[None, :, 2:])
@@ -34,21 +47,87 @@ def compute_iou_matrix(boxes_a: np.ndarray, boxes_b: np.ndarray) -> np.ndarray:
     union_area = area_a[:, None] + area_b[None, :] - inter_area
     union_area = np.maximum(union_area, 1e-6)
 
-    return inter_area / union_area
+    iou = inter_area / union_area
+    return np.nan_to_num(iou, nan=0.0)
+
+def linear_assignment_iou(
+    tracks: List["SingleTrack"],
+    detections: List[Dict[str, Any]],
+    iou_thresh: float
+) -> Tuple[List[Tuple[int, int]], List[int], List[int]]:
+    """
+    Solves optimal bipartite matching between tracks and detections using Hungarian assignment.
+    Returns:
+        matches: List of (track_idx, det_idx) pairs satisfying IoU >= iou_thresh
+        unmatched_tracks: List of indices of tracks with no valid match
+        unmatched_dets: List of indices of detections with no valid match
+    """
+    if len(tracks) == 0 or len(detections) == 0:
+        return [], list(range(len(tracks))), list(range(len(detections)))
+
+    track_boxes = np.array([t.bbox for t in tracks], dtype=np.float32)
+    det_boxes = np.array([d["bbox"] for d in detections], dtype=np.float32)
+
+    iou_matrix = compute_iou_matrix(track_boxes, det_boxes)
+    cost_matrix = 1.0 - iou_matrix
+    cost_matrix = np.nan_to_num(cost_matrix, nan=1.0, posinf=1.0, neginf=1.0)
+
+    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+
+    matches: List[Tuple[int, int]] = []
+    unmatched_tracks = set(range(len(tracks)))
+    unmatched_dets = set(range(len(detections)))
+
+    for r, c in zip(row_ind, col_ind):
+        if iou_matrix[r, c] >= iou_thresh:
+            matches.append((r, c))
+            unmatched_tracks.discard(r)
+            unmatched_dets.discard(c)
+
+    return matches, sorted(list(unmatched_tracks)), sorted(list(unmatched_dets))
 
 class SingleTrack:
-    """Represents a single tracked target with state estimation and lifecycle."""
+    """
+    Represents a single tracked target with state estimation, lifecycle,
+    and Exponential Moving Average (EMA) velocity smoothing.
+    """
     _id_counter = 1
     dt: float = 1.0 / 25.0
+    ema_alpha: float = 0.35
 
-    def __init__(self, bbox: List[float], confidence: float, foot_point: Tuple[float, float], dt: float = 1.0/25.0):
+    @classmethod
+    def reset_id_counter(cls, start: int = 1):
+        cls._id_counter = start
+
+    def __init__(
+        self,
+        bbox: List[float],
+        confidence: float,
+        foot_point: Tuple[float, float],
+        dt: float = 1.0 / 25.0,
+        ema_alpha: float = 0.35
+    ):
         self.track_id = SingleTrack._id_counter
         SingleTrack._id_counter += 1
 
-        self.bbox = list(bbox)
-        self.confidence = confidence
-        self.foot_point = foot_point
-        self.dt = dt
+        # Defensive sanitize bbox
+        clean_bbox = [0.0, 0.0, 10.0, 10.0]
+        if bbox is not None and len(bbox) >= 4:
+            clean_bbox = [
+                float(b) if np.isfinite(b) else 0.0 for b in bbox[:4]
+            ]
+        self.bbox = clean_bbox
+
+        conf = float(confidence) if np.isfinite(confidence) else 1.0
+        self.confidence = max(0.0, min(1.0, conf))
+
+        # Defensive sanitize foot_point
+        fx = float(foot_point[0]) if (foot_point is not None and len(foot_point) >= 2 and np.isfinite(foot_point[0])) else ((self.bbox[0] + self.bbox[2]) / 2.0)
+        fy = float(foot_point[1]) if (foot_point is not None and len(foot_point) >= 2 and np.isfinite(foot_point[1])) else self.bbox[3]
+        self.foot_point = (fx, fy)
+
+        self.dt = float(dt) if (dt is not None and np.isfinite(dt) and dt > 1e-4) else (1.0 / 25.0)
+        self.ema_alpha = float(ema_alpha) if (ema_alpha is not None and np.isfinite(ema_alpha)) else 0.35
         self.world_pos: Optional[Tuple[float, float]] = None
 
         # State lifecycle
@@ -58,15 +137,29 @@ class SingleTrack:
         self.time_since_update = 0
 
         # Motion trail history
-        self.trail: List[Tuple[int, int]] = [(int(foot_point[0]), int(foot_point[1]))]
+        self.trail: List[Tuple[int, int]] = [(int(self.foot_point[0]), int(self.foot_point[1]))]
         self.world_trail: List[Tuple[float, float]] = []
+
+        # Real-world metric velocity & speed (EMA smoothed, alpha = 0.35)
         self.metric_vx: float = 0.0
         self.metric_vy: float = 0.0
         self.metric_speed: float = 0.0
+        self._raw_vx: float = 0.0
+        self._raw_vy: float = 0.0
+
+        # Pixel-space velocity (EMA smoothed)
+        self.pixel_vx: float = 0.0
+        self.pixel_vy: float = 0.0
+
+        # Pose & Kinetic Attributes
+        self.keypoints: Optional[np.ndarray] = None
+        self.posture: str = "standing"
+        self.threat_level: int = 1
+        self.pose_indicators: List[str] = []
 
         # Ground/Image Kalman Filter
-        self.kf = KalmanFilter2D(dt=dt, process_noise_std=0.8, measurement_noise_std=0.3)
-        self.kf.initialize(foot_point[0], foot_point[1])
+        self.kf = KalmanFilter2D(dt=self.dt, process_noise_std=0.8, measurement_noise_std=0.3)
+        self.kf.initialize(self.foot_point[0], self.foot_point[1])
 
     def predict(self):
         """Advances Kalman filter estimate."""
@@ -77,139 +170,345 @@ class SingleTrack:
         # Shift bounding box by Kalman displacement to maintain IoU overlap
         dx = pred_x - old_x
         dy = pred_y - old_y
-        self.bbox = [self.bbox[0] + dx, self.bbox[1] + dy, self.bbox[2] + dx, self.bbox[3] + dy]
+        if np.isfinite(dx) and np.isfinite(dy):
+            self.bbox = [self.bbox[0] + dx, self.bbox[1] + dy, self.bbox[2] + dx, self.bbox[3] + dy]
 
         self.age += 1
         self.time_since_update += 1
 
-    def update(self, bbox: List[float], confidence: float, foot_point: Tuple[float, float], world_pt: Optional[Tuple[float, float]] = None):
-        """Incorporates new matched detection."""
-        self.bbox = list(bbox)
-        self.confidence = confidence
-        self.kf.update(foot_point[0], foot_point[1])
+    def update(
+        self,
+        bbox: List[float],
+        confidence: float,
+        foot_point: Tuple[float, float],
+        world_pt: Optional[Tuple[float, float]] = None,
+        keypoints: Optional[np.ndarray] = None,
+        posture_info: Optional[Dict[str, Any]] = None
+    ):
+        """Incorporates new matched detection with EMA velocity smoothing."""
+        if bbox is not None and len(bbox) >= 4:
+            self.bbox = [float(b) if np.isfinite(b) else self.bbox[i] for i, b in enumerate(bbox[:4])]
+        
+        conf = float(confidence) if np.isfinite(confidence) else self.confidence
+        self.confidence = max(0.0, min(1.0, conf))
+
+        fx = float(foot_point[0]) if (foot_point is not None and len(foot_point) >= 2 and np.isfinite(foot_point[0])) else self.foot_point[0]
+        fy = float(foot_point[1]) if (foot_point is not None and len(foot_point) >= 2 and np.isfinite(foot_point[1])) else self.foot_point[1]
+        
+        self.kf.update(fx, fy)
         self.foot_point = self.kf.position
 
         self.hits += 1
         self.time_since_update = 0
 
-        # Update trail
+        # Update pixel trail
         px_pt = (int(self.foot_point[0]), int(self.foot_point[1]))
         self.trail.append(px_pt)
         if len(self.trail) > 40:
             self.trail.pop(0)
 
-        if world_pt is not None:
-            self.world_pos = world_pt
-            self.world_trail.append(world_pt)
+        # Smooth pixel velocity from Kalman filter using EMA
+        raw_kf_vx, raw_kf_vy = self.kf.velocity
+        if not np.isfinite(raw_kf_vx):
+            raw_kf_vx = 0.0
+        if not np.isfinite(raw_kf_vy):
+            raw_kf_vy = 0.0
+
+        if self.hits <= 2:
+            self.pixel_vx = raw_kf_vx
+            self.pixel_vy = raw_kf_vy
+        else:
+            self.pixel_vx = self.ema_alpha * raw_kf_vx + (1.0 - self.ema_alpha) * self.pixel_vx
+            self.pixel_vy = self.ema_alpha * raw_kf_vy + (1.0 - self.ema_alpha) * self.pixel_vy
+
+        # Update world coordinates and real-world metric velocity with EMA smoothing
+        if world_pt is not None and len(world_pt) >= 2 and np.isfinite(world_pt[0]) and np.isfinite(world_pt[1]):
+            clean_world_pt = (float(world_pt[0]), float(world_pt[1]))
+            self.world_pos = clean_world_pt
+            self.world_trail.append(clean_world_pt)
             if len(self.world_trail) > 40:
                 self.world_trail.pop(0)
 
             if len(self.world_trail) >= 2:
                 p1 = self.world_trail[-2]
                 p2 = self.world_trail[-1]
-                step_dt = max(0.001, getattr(self, "dt", 1.0 / 25.0))
-                self.metric_vx = (p2[0] - p1[0]) / step_dt
-                self.metric_vy = (p2[1] - p1[1]) / step_dt
-                self.metric_speed = min(35.0, float(np.hypot(self.metric_vx, self.metric_vy) * 3.6))
+                step_dt = getattr(self, "dt", 1.0 / 25.0)
+                if step_dt is None or not np.isfinite(step_dt) or step_dt <= 1e-4:
+                    step_dt = 1.0 / 25.0
+
+                raw_vx = (p2[0] - p1[0]) / step_dt
+                raw_vy = (p2[1] - p1[1]) / step_dt
+                if not (np.isfinite(raw_vx) and np.isfinite(raw_vy)):
+                    raw_vx, raw_vy = 0.0, 0.0
+
+                self._raw_vx = raw_vx
+                self._raw_vy = raw_vy
+
+                # Exponential Moving Average (EMA) smoothing: alpha = 0.35
+                if len(self.world_trail) == 2:
+                    self.metric_vx = raw_vx
+                    self.metric_vy = raw_vy
+                else:
+                    self.metric_vx = self.ema_alpha * raw_vx + (1.0 - self.ema_alpha) * self.metric_vx
+                    self.metric_vy = self.ema_alpha * raw_vy + (1.0 - self.ema_alpha) * self.metric_vy
+
+                spd = float(np.hypot(self.metric_vx, self.metric_vy) * 3.6)
+                self.metric_speed = min(35.0, spd if np.isfinite(spd) else 0.0)
+
+        # Update pose attributes if available
+        if keypoints is not None:
+            self.keypoints = np.asarray(keypoints, dtype=np.float32)
+        if posture_info is not None:
+            self.posture = posture_info.get("posture", self.posture)
+            self.threat_level = posture_info.get("threat_level", self.threat_level)
+            self.pose_indicators = posture_info.get("indicators", self.pose_indicators)
 
     @property
     def velocity(self) -> Tuple[float, float]:
-        return self.kf.velocity
+        if self.hits <= 1:
+            return self.kf.velocity
+        return (self.pixel_vx, self.pixel_vy)
 
     @property
     def speed(self) -> float:
-        return self.kf.speed
+        if self.hits <= 1:
+            return self.kf.speed
+        return float(np.hypot(self.pixel_vx, self.pixel_vy))
+
 
 class MultiTargetTracker:
     """
-    Multi-Target Association Engine.
+    ByteTrack Multi-Target Association Engine.
     Combines Bounding-Box IoU with Kalman Filter state estimation.
-    Solves optimal bipartite matching using the Hungarian algorithm.
+    Solves optimal bipartite matching using two-stage Hungarian association:
+    - Stage 1: High-confidence detections (conf >= 0.50) matched to confirmed tracks.
+    - Stage 2: Low-confidence detections (0.15 <= conf < 0.50) matched to remaining unconfirmed/lost tracks
+      to maintain identity through heavy occlusion or motion blur.
     """
     def __init__(
         self,
         min_hits: int = 2,
         max_age: int = 15,
         iou_threshold: float = 0.3,
-        dt: float = 1.0 / 25.0
+        dt: float = 1.0 / 25.0,
+        high_conf_threshold: float = 0.50,
+        low_conf_threshold: float = 0.15,
+        ema_alpha: float = 0.35
     ):
         self.min_hits = min_hits
         self.max_age = max_age
         self.iou_threshold = iou_threshold
         self.dt = dt
+        self.high_conf_threshold = high_conf_threshold
+        self.low_conf_threshold = low_conf_threshold
+        self.ema_alpha = ema_alpha
         self.tracks: List[SingleTrack] = []
+
+    def _update_single_track(
+        self,
+        trk: SingleTrack,
+        det: Dict[str, Any],
+        homography_transformer=None,
+        pose_classifier=None
+    ):
+        """Helper to transform coordinates and incorporate detection into a track."""
+        world_pt = None
+        if homography_transformer and homography_transformer.is_calibrated:
+            try:
+                world_pt = homography_transformer.image_to_world(
+                    det["foot_point"][0], det["foot_point"][1]
+                )
+            except Exception:
+                world_pt = None
+
+        keypoints = det.get("keypoints")
+        posture_info = det.get("posture_info")
+        if posture_info is None and keypoints is not None:
+            # Classify posture via pose_classifier or standalone helper
+            speed_mps = (trk.metric_speed / 3.6) if trk.world_pos is not None else 0.0
+            if pose_classifier is not None:
+                try:
+                    posture_info = pose_classifier.classify_pose(keypoints, speed_mps=speed_mps)
+                except Exception:
+                    posture_info = None
+            else:
+                try:
+                    from cv_core.kinetics.pose_classifier import classify_keypoints_posture
+                    posture_info = classify_keypoints_posture(keypoints, speed_mps=speed_mps)
+                except Exception:
+                    posture_info = None
+
+        trk.update(
+            bbox=det["bbox"],
+            confidence=det["confidence"],
+            foot_point=det["foot_point"],
+            world_pt=world_pt,
+            keypoints=keypoints,
+            posture_info=posture_info
+        )
 
     def update(
         self,
-        detections: List[Dict[str, Any]],
-        homography_transformer=None
+        detections: Optional[List[Dict[str, Any]]] = None,
+        homography_transformer=None,
+        pose_classifier=None
     ) -> List[Dict[str, Any]]:
         """
-        detections: List of dicts with:
-            'bbox': [x1, y1, x2, y2]
-            'confidence': float
-            'foot_point': (foot_x, foot_y)
+        ByteTrack Two-Stage Association Update:
+            detections: List of dicts with:
+                'bbox': [x1, y1, x2, y2]
+                'confidence': float
+                'foot_point': (foot_x, foot_y)
+                'keypoints': Optional (17, 2) or (17, 3) keypoint array
         """
-        # 1. Predict new locations of existing tracks
+        if detections is None:
+            detections = []
+
+        # Validate and sanitize input detections to prevent NaN/corrupt input crashes
+        cleaned_detections: List[Dict[str, Any]] = []
+        for det in detections:
+            if not isinstance(det, dict) or "bbox" not in det:
+                continue
+            raw_box = det["bbox"]
+            if raw_box is None or len(raw_box) < 4:
+                continue
+            try:
+                box = [float(raw_box[0]), float(raw_box[1]), float(raw_box[2]), float(raw_box[3])]
+            except (ValueError, TypeError):
+                continue
+            if not all(np.isfinite(c) for c in box):
+                continue
+
+            conf = float(det.get("confidence", 1.0))
+            if not np.isfinite(conf):
+                conf = 0.0
+
+            fp = det.get("foot_point")
+            if fp is None or len(fp) < 2 or not (np.isfinite(fp[0]) and np.isfinite(fp[1])):
+                fp = ((box[0] + box[2]) / 2.0, box[3])
+            else:
+                fp = (float(fp[0]), float(fp[1]))
+
+            clean_d = {
+                "bbox": box,
+                "confidence": conf,
+                "foot_point": fp
+            }
+            if "keypoints" in det:
+                clean_d["keypoints"] = det["keypoints"]
+            if "posture_info" in det:
+                clean_d["posture_info"] = det["posture_info"]
+            cleaned_detections.append(clean_d)
+
+        detections = cleaned_detections
+
+        # 1. Predict new locations of all existing tracks
         for trk in self.tracks:
             trk.predict()
 
-        num_tracks = len(self.tracks)
-        num_dets = len(detections)
+        # 2. Partition detections into High-Confidence and Low-Confidence bands
+        high_dets: List[Dict[str, Any]] = []
+        low_dets: List[Dict[str, Any]] = []
+        for det in detections:
+            conf = float(det.get("confidence", 1.0))
+            if conf >= self.high_conf_threshold:
+                high_dets.append(det)
+            elif conf >= self.low_conf_threshold:
+                low_dets.append(det)
 
-        matched_tracks = set()
-        matched_dets = set()
+        # 3. Partition tracks into confirmed, unconfirmed (tentative), and lost
+        confirmed_tracks = [t for t in self.tracks if t.state == TrackState.CONFIRMED]
+        unconfirmed_tracks = [t for t in self.tracks if t.state == TrackState.TENTATIVE]
+        lost_tracks = [t for t in self.tracks if t.state == TrackState.LOST]
 
-        if num_tracks > 0 and num_dets > 0:
-            track_boxes = np.array([t.bbox for t in self.tracks], dtype=np.float32)
-            det_boxes = np.array([d["bbox"] for d in detections], dtype=np.float32)
+        # =========================================================================
+        # STAGE 1: Match confirmed tracks with high-confidence detections
+        # =========================================================================
+        matches_s1, unmatched_confirmed_idx, unmatched_high_idx = linear_assignment_iou(
+            confirmed_tracks, high_dets, self.iou_threshold
+        )
+        for r, c in matches_s1:
+            self._update_single_track(
+                confirmed_tracks[r], high_dets[c],
+                homography_transformer=homography_transformer,
+                pose_classifier=pose_classifier
+            )
 
-            # Compute IoU matrix
-            iou_matrix = compute_iou_matrix(track_boxes, det_boxes)
-            # Cost matrix = 1.0 - IoU
-            cost_matrix = 1.0 - iou_matrix
+        # Match remaining high-confidence detections with unconfirmed (tentative) tracks
+        rem_high_dets = [high_dets[i] for i in unmatched_high_idx]
+        matches_unconf, unmatched_unconf_idx, unmatched_rem_high_idx = linear_assignment_iou(
+            unconfirmed_tracks, rem_high_dets, self.iou_threshold
+        )
+        for r, c in matches_unconf:
+            self._update_single_track(
+                unconfirmed_tracks[r], rem_high_dets[c],
+                homography_transformer=homography_transformer,
+                pose_classifier=pose_classifier
+            )
 
-            # Hungarian bipartite matching
-            row_ind, col_ind = linear_sum_assignment(cost_matrix)
+        # Match still remaining high-confidence detections with lost tracks (recovering lost targets)
+        lost_candidates_high = [rem_high_dets[i] for i in unmatched_rem_high_idx]
+        matches_lost_high, unmatched_lost_idx, unmatched_final_high_idx = linear_assignment_iou(
+            lost_tracks, lost_candidates_high, self.iou_threshold
+        )
+        for r, c in matches_lost_high:
+            self._update_single_track(
+                lost_tracks[r], lost_candidates_high[c],
+                homography_transformer=homography_transformer,
+                pose_classifier=pose_classifier
+            )
 
-            for r, c in zip(row_ind, col_ind):
-                if iou_matrix[r, c] >= self.iou_threshold:
-                    matched_tracks.add(r)
-                    matched_dets.add(c)
-                    det = detections[c]
-                    world_pt = None
-                    if homography_transformer and homography_transformer.is_calibrated:
-                        try:
-                            world_pt = homography_transformer.image_to_world(det["foot_point"][0], det["foot_point"][1])
-                        except Exception:
-                            world_pt = None
+        # =========================================================================
+        # STAGE 2: Match remaining unconfirmed/lost tracks with low-confidence detections
+        # =========================================================================
+        # Remaining tracks = unmatched confirmed from stage 1 + unmatched tentative + unmatched lost
+        unmatched_confirmed_tracks = [confirmed_tracks[i] for i in unmatched_confirmed_idx]
+        unmatched_unconf_tracks = [unconfirmed_tracks[i] for i in unmatched_unconf_idx]
+        unmatched_lost_tracks = [lost_tracks[i] for i in unmatched_lost_idx]
 
-                    self.tracks[r].update(
-                        bbox=det["bbox"],
-                        confidence=det["confidence"],
-                        foot_point=det["foot_point"],
-                        world_pt=world_pt
+        remaining_tracks_stage2 = (
+            unmatched_confirmed_tracks + unmatched_unconf_tracks + unmatched_lost_tracks
+        )
+
+        matches_s2, unmatched_s2_tracks_idx, _ = linear_assignment_iou(
+            remaining_tracks_stage2, low_dets, self.iou_threshold
+        )
+        for r, c in matches_s2:
+            self._update_single_track(
+                remaining_tracks_stage2[r], low_dets[c],
+                homography_transformer=homography_transformer,
+                pose_classifier=pose_classifier
+            )
+        # Note: Unmatched low-confidence detections are discarded to prevent false positive tracks.
+
+        # =========================================================================
+        # Track Initialization: Only remaining high-confidence detections spawn new tracks
+        # =========================================================================
+        for i in unmatched_final_high_idx:
+            det = lost_candidates_high[i]
+            new_track = SingleTrack(
+                bbox=det["bbox"],
+                confidence=det["confidence"],
+                foot_point=det["foot_point"],
+                dt=self.dt,
+                ema_alpha=self.ema_alpha
+            )
+            if det.get("keypoints") is not None:
+                new_track.keypoints = np.asarray(det["keypoints"], dtype=np.float32)
+            if homography_transformer and homography_transformer.is_calibrated:
+                try:
+                    new_track.world_pos = homography_transformer.image_to_world(
+                        det["foot_point"][0], det["foot_point"][1]
                     )
+                except Exception:
+                    pass
+            self.tracks.append(new_track)
 
-        # 2. Create new tracks for unmatched detections
-        for idx, det in enumerate(detections):
-            if idx not in matched_dets:
-                new_track = SingleTrack(
-                    bbox=det["bbox"],
-                    confidence=det["confidence"],
-                    foot_point=det["foot_point"],
-                    dt=self.dt
-                )
-                if homography_transformer and homography_transformer.is_calibrated:
-                    try:
-                        new_track.world_pos = homography_transformer.image_to_world(det["foot_point"][0], det["foot_point"][1])
-                    except Exception:
-                        pass
-                self.tracks.append(new_track)
-
-        # 3. Update track lifecycle states
-        active_tracks = []
-        output_tracks = []
+        # =========================================================================
+        # Lifecycle Maintenance & Output Construction
+        # =========================================================================
+        active_tracks: List[SingleTrack] = []
+        output_tracks: List[Dict[str, Any]] = []
 
         for trk in self.tracks:
             # Promote TENTATIVE or recover LOST tracks upon successful matching
@@ -231,8 +530,12 @@ class MultiTargetTracker:
             # Output only confirmed tracks (or active tentative if fresh)
             if trk.state == TrackState.CONFIRMED or (trk.state == TrackState.TENTATIVE and trk.hits >= 2):
                 vx, vy = (trk.metric_vx, trk.metric_vy) if trk.world_pos is not None else trk.velocity
+                if not (np.isfinite(vx) and np.isfinite(vy)):
+                    vx, vy = 0.0, 0.0
                 speed_kmh = trk.metric_speed if trk.world_pos is not None else float(trk.speed * 3.6)
-                output_tracks.append({
+                if not np.isfinite(speed_kmh):
+                    speed_kmh = 0.0
+                track_info: Dict[str, Any] = {
                     "track_id": trk.track_id,
                     "bbox": trk.bbox,
                     "confidence": trk.confidence,
@@ -242,8 +545,15 @@ class MultiTargetTracker:
                     "world_trail": list(trk.world_trail),
                     "vx": vx,
                     "vy": vy,
-                    "speed": speed_kmh
-                })
+                    "speed": speed_kmh,
+                    "state": trk.state.value,
+                    "posture": trk.posture,
+                    "threat_level": trk.threat_level,
+                    "indicators": list(trk.pose_indicators)
+                }
+                if trk.keypoints is not None:
+                    track_info["keypoints"] = trk.keypoints
+                output_tracks.append(track_info)
 
         self.tracks = active_tracks
         return output_tracks

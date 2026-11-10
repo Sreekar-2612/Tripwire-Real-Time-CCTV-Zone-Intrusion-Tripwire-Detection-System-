@@ -16,13 +16,15 @@ class BEVRadarRenderer:
         background_color: Tuple[int, int, int] = (20, 24, 28)
     ):
         self.size = radar_size
-        self.world_extent = world_extent_m
-        self.grid_step = grid_step_m
+        self.world_extent = float(world_extent_m) if (world_extent_m is not None and world_extent_m > 1e-3) else 20.0
+        self.grid_step = float(grid_step_m) if (grid_step_m is not None and grid_step_m > 1e-3) else 2.0
         self.bg_color = background_color
-        self.scale = radar_size / world_extent_m  # pixels per meter
+        self.scale = radar_size / self.world_extent  # pixels per meter
 
     def world_to_radar_pixel(self, X_m: float, Y_m: float) -> Tuple[int, int]:
         """Maps ground coordinates (X, Y in meters) to radar canvas pixels."""
+        if not (np.isfinite(X_m) and np.isfinite(Y_m)):
+            return (0, self.size - 1)
         px = int(np.clip(X_m * self.scale, 0, self.size - 1))
         # Invert Y so 0,0 is at the bottom or top as standard
         py = int(np.clip(self.size - 1 - (Y_m * self.scale), 0, self.size - 1))
@@ -98,7 +100,7 @@ class BEVRadarRenderer:
         # 3. Draw Tracked Intruders
         for t in tracks:
             w_pos = t.get("world_pos")
-            if not w_pos:
+            if not w_pos or len(w_pos) < 2 or not (np.isfinite(w_pos[0]) and np.isfinite(w_pos[1])):
                 continue
 
             tid = t.get("track_id", 0)
@@ -110,8 +112,9 @@ class BEVRadarRenderer:
 
             # Draw Ground Trajectory Trail
             trail = t.get("world_trail", [])
-            if len(trail) > 1:
-                trail_pts = [self.world_to_radar_pixel(tp[0], tp[1]) for tp in trail]
+            valid_trail = [tp for tp in trail if tp is not None and len(tp) >= 2 and np.isfinite(tp[0]) and np.isfinite(tp[1])]
+            if len(valid_trail) > 1:
+                trail_pts = [self.world_to_radar_pixel(tp[0], tp[1]) for tp in valid_trail]
                 for idx in range(1, len(trail_pts)):
                     cv2.line(canvas, trail_pts[idx - 1], trail_pts[idx], (180, 180, 0), 1, cv2.LINE_AA)
 
@@ -120,15 +123,22 @@ class BEVRadarRenderer:
             cv2.circle(canvas, (px, py), 10, color, 1, cv2.LINE_AA)
 
             # Velocity Vector Arrow
-            vx = t.get("vx", 0.0)
-            vy = t.get("vy", 0.0)
-            arrow_scale = 1.5  # amplify for visibility
-            tip_x = int(px + vx * self.scale * arrow_scale)
-            tip_y = int(py - vy * self.scale * arrow_scale)  # invert Y for canvas
-            cv2.arrowedLine(canvas, (px, py), (tip_x, tip_y), (0, 255, 120), 2, tipLength=0.3)
+            vx = float(t.get("vx", 0.0))
+            vy = float(t.get("vy", 0.0))
+            if not (np.isfinite(vx) and np.isfinite(vy)):
+                vx, vy = 0.0, 0.0
+
+            if np.hypot(vx, vy) > 0.05:
+                arrow_scale = 1.5  # amplify for visibility
+                tip_x = int(np.clip(px + vx * self.scale * arrow_scale, 0, self.size - 1))
+                tip_y = int(np.clip(py - vy * self.scale * arrow_scale, 0, self.size - 1))  # invert Y for canvas
+                if tip_x != px or tip_y != py:
+                    cv2.arrowedLine(canvas, (px, py), (tip_x, tip_y), (0, 255, 120), 2, tipLength=0.3)
 
             # Metadata Tag (ID + km/h)
-            speed_kmh = t.get("speed_kmh", 0.0)
+            speed_kmh = float(t.get("speed_kmh", 0.0))
+            if not np.isfinite(speed_kmh):
+                speed_kmh = 0.0
             tag = f"#{tid} {speed_kmh:.1f}km/h"
             cv2.putText(canvas, tag, (px + 10, py - 6),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 255, 255), 1, cv2.LINE_AA)
@@ -152,12 +162,22 @@ class BEVRadarRenderer:
         """
         Combines camera perspective video and BEV radar side-by-side into a single display.
         """
+        if perspective_frame is None or perspective_frame.size == 0:
+            return bev_radar if bev_radar is not None else np.zeros((480, 480, 3), dtype=np.uint8)
+        if bev_radar is None or bev_radar.size == 0:
+            return perspective_frame
+
         h_cam, w_cam = perspective_frame.shape[:2]
         h_radar, w_radar = bev_radar.shape[:2]
 
+        if h_cam <= 0 or w_cam <= 0:
+            return bev_radar
+        if h_radar <= 0 or w_radar <= 0:
+            return perspective_frame
+
         # Match radar height to camera height
         if h_radar != h_cam:
-            new_w = int(w_radar * (h_cam / float(h_radar)))
+            new_w = max(1, int(w_radar * (h_cam / float(max(1, h_radar)))))
             bev_radar_resized = cv2.resize(bev_radar, (new_w, h_cam), interpolation=cv2.INTER_AREA)
         else:
             bev_radar_resized = bev_radar

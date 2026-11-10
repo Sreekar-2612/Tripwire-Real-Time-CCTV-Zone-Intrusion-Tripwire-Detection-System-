@@ -1,7 +1,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Union
 import numpy as np
 import cv2
 
@@ -92,7 +92,10 @@ class HomographyTransformer:
         if not self.is_calibrated:
             raise RuntimeError("HomographyTransformer has not been calibrated.")
 
-        vec = np.array([u, v, 1.0], dtype=np.float64)
+        if not (np.isfinite(u) and np.isfinite(v)):
+            raise ValueError(f"Non-finite image coordinates: ({u}, {v})")
+
+        vec = np.array([float(u), float(v), 1.0], dtype=np.float64)
         projected = self.H @ vec
         
         if np.isclose(projected[2], 0.0, atol=1e-9):
@@ -102,23 +105,47 @@ class HomographyTransformer:
         Y = float(projected[1] / projected[2])
         return (X, Y)
 
-    def world_to_image(self, X: float, Y: float) -> Tuple[float, float]:
+    def is_image_point_in_front_of_camera(self, u: float, v: float) -> bool:
+        """Checks whether the image coordinate projects to the valid half-plane in front of camera."""
+        if not self.is_calibrated or not (np.isfinite(u) and np.isfinite(v)):
+            return False
+        vec = np.array([float(u), float(v), 1.0], dtype=np.float64)
+        projected = self.H @ vec
+        return float(projected[2]) > 1e-9
+
+    def world_to_image(self, X: float, Y: float, check_camera_plane: bool = False) -> Tuple[float, float]:
         """
         Reprojects ground coordinates (X, Y) back into camera pixel coordinates (u, v).
         [u, v, 1]^T ~ H_inv * [X, Y, 1]^T
+        
+        If check_camera_plane is True, raises ValueError if the point lies behind the camera plane.
         """
         if not self.is_calibrated:
             raise RuntimeError("HomographyTransformer has not been calibrated.")
 
-        vec = np.array([X, Y, 1.0], dtype=np.float64)
+        if not (np.isfinite(X) and np.isfinite(Y)):
+            raise ValueError(f"Non-finite world coordinates: ({X}, {Y})")
+
+        vec = np.array([float(X), float(Y), 1.0], dtype=np.float64)
         reprojected = self.H_inv @ vec
 
         if np.isclose(reprojected[2], 0.0, atol=1e-9):
             raise ZeroDivisionError("Projective singularity encountered in inverse projection.")
 
+        if check_camera_plane and reprojected[2] < 0.0:
+            raise ValueError(f"World point ({X}, {Y}) is behind camera plane (w={reprojected[2]:.4f}).")
+
         u = float(reprojected[0] / reprojected[2])
         v = float(reprojected[1] / reprojected[2])
         return (u, v)
+
+    def is_world_point_in_front_of_camera(self, X: float, Y: float) -> bool:
+        """Checks whether the world coordinate lies strictly in front of the camera projection plane."""
+        if not self.is_calibrated or not (np.isfinite(X) and np.isfinite(Y)):
+            return False
+        vec = np.array([float(X), float(Y), 1.0], dtype=np.float64)
+        reprojected = self.H_inv @ vec
+        return float(reprojected[2]) > 1e-9
 
     def compute_reprojection_error(
         self,
@@ -128,9 +155,13 @@ class HomographyTransformer:
         """Calculates root mean squared reprojection error in world units (meters)."""
         errors = []
         for (u, v), (X_gt, Y_gt) in zip(image_points, world_points):
-            X_pred, Y_pred = self.image_to_world(u, v)
-            dist = np.hypot(X_pred - X_gt, Y_pred - Y_gt)
-            errors.append(dist)
+            try:
+                X_pred, Y_pred = self.image_to_world(u, v)
+                dist = np.hypot(X_pred - X_gt, Y_pred - Y_gt)
+                if np.isfinite(dist):
+                    errors.append(dist)
+            except Exception:
+                continue
         return float(np.mean(errors)) if errors else 0.0
 
     def compute_velocity(
@@ -149,29 +180,46 @@ class HomographyTransformer:
             vx: X-velocity (m/s)
             vy: Y-velocity (m/s)
         """
-        if len(history_world_pts) < 2:
-            return {"speed_mps": 0.0, "speed_kmh": 0.0, "direction_deg": 0.0, "vx": 0.0, "vy": 0.0}
+        zero_vel = {"speed_mps": 0.0, "speed_kmh": 0.0, "direction_deg": 0.0, "vx": 0.0, "vy": 0.0}
+        if not history_world_pts or len(history_world_pts) < 2:
+            return zero_vel
 
         # Use recent temporal window (last ~0.5 to 1.5s) to smooth jitter
         p1 = history_world_pts[0]
         p2 = history_world_pts[-1]
 
-        if len(p1) >= 3 and len(p2) >= 3:
-            dt = p2[2] - p1[2]
-        else:
-            dt = (len(history_world_pts) - 1) * (1.0 / max(1.0, fps))
+        if p1 is None or p2 is None or len(p1) < 2 or len(p2) < 2:
+            return zero_vel
 
-        if dt <= 1e-4:
-            return {"speed_mps": 0.0, "speed_kmh": 0.0, "direction_deg": 0.0, "vx": 0.0, "vy": 0.0}
+        if not (np.isfinite(p1[0]) and np.isfinite(p1[1]) and np.isfinite(p2[0]) and np.isfinite(p2[1])):
+            return zero_vel
+
+        if len(p1) >= 3 and len(p2) >= 3:
+            t1, t2 = p1[2], p2[2]
+            if np.isfinite(t1) and np.isfinite(t2):
+                dt = t2 - t1
+            else:
+                dt = 0.0
+        else:
+            fps_val = float(fps) if (fps is not None and np.isfinite(fps) and fps > 1e-3) else 30.0
+            dt = (len(history_world_pts) - 1) * (1.0 / fps_val)
+
+        if not np.isfinite(dt) or dt <= 1e-4:
+            return zero_vel
 
         dx = p2[0] - p1[0]
         dy = p2[1] - p1[1]
 
+        if np.isclose(dx, 0.0, atol=1e-6) and np.isclose(dy, 0.0, atol=1e-6):
+            return zero_vel
+
         vx = dx / dt
         vy = dy / dt
         speed_mps = float(np.hypot(vx, vy))
-        speed_kmh = float(speed_mps * 3.6)
+        if not np.isfinite(speed_mps):
+            return zero_vel
 
+        speed_kmh = float(speed_mps * 3.6)
         angle_rad = np.arctan2(vy, dx)
         direction_deg = float((np.degrees(angle_rad) + 360) % 360)
 
@@ -223,7 +271,7 @@ class HomographyTransformer:
 
         return segments
 
-    def save_calibration(self, filepath: Path or str):
+    def save_calibration(self, filepath: Union[Path, str]):
         """Saves calibration matrix and parameters to a JSON file."""
         if not self.is_calibrated:
             raise RuntimeError("Cannot save uncalibrated transformer.")
@@ -238,7 +286,7 @@ class HomographyTransformer:
         logger.info(f"Calibration saved to {filepath}")
 
     @classmethod
-    def load_calibration(cls, filepath: Path or str) -> "HomographyTransformer":
+    def load_calibration(cls, filepath: Union[Path, str]) -> "HomographyTransformer":
         """Loads calibration from a saved JSON file."""
         with open(filepath, "r") as f:
             data = json.load(f)

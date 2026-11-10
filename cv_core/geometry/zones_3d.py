@@ -70,9 +70,11 @@ class MetricZone3D:
         """Checks if a metric point (X, Y) lies inside this ground polygon."""
         if self.polygon is None:
             return False
-        pt = Point(X_meters, Y_meters)
+        if not (np.isfinite(X_meters) and np.isfinite(Y_meters)):
+            return False
+        pt = Point(float(X_meters), float(Y_meters))
         try:
-            return self.polygon.contains(pt) or self.polygon.touches(pt)
+            return bool(self.polygon.contains(pt) or self.polygon.touches(pt))
         except Exception:
             return False
 
@@ -88,8 +90,19 @@ class MetricZone3D:
         if self.line is None or prev_world_pt is None or curr_world_pt is None:
             return None
 
-        motion_seg = LineString([prev_world_pt, curr_world_pt])
-        if not self.line.intersects(motion_seg):
+        if len(prev_world_pt) < 2 or len(curr_world_pt) < 2:
+            return None
+
+        if not (np.isfinite(prev_world_pt[0]) and np.isfinite(prev_world_pt[1]) and
+                np.isfinite(curr_world_pt[0]) and np.isfinite(curr_world_pt[1])):
+            return None
+
+        try:
+            motion_seg = LineString([(float(prev_world_pt[0]), float(prev_world_pt[1])),
+                                     (float(curr_world_pt[0]), float(curr_world_pt[1]))])
+            if not self.line.intersects(motion_seg):
+                return None
+        except Exception:
             return None
 
         a = self.world_coords[0]

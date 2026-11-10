@@ -50,19 +50,39 @@ class WebStreamEngine:
         ]
         self.lock = threading.Lock()
         self.cap = None
+        self.last_reconnect_time = 0.0
         self._init_cap()
+
+    def _generate_disconnected_frame(self, reason: str = "CAMERA SIGNAL DISCONNECTED") -> bytes:
+        """Generates a fallback status frame when camera feed is unavailable or disconnected."""
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        frame[:] = (20, 20, 25)
+        cv2.putText(frame, "WARNING: " + reason, (30, 220), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 140, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, f"Feed: [{self.active_feed}] | Auto-reconnecting...", (30, 260),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (160, 160, 160), 1, cv2.LINE_AA)
+        radar_img = self.radar.render(self.zones, [])
+        dual_view = BEVRadarRenderer.create_dual_view(frame, radar_img)
+        ret_enc, buffer = cv2.imencode(".jpg", dual_view)
+        return buffer.tobytes() if ret_enc else b""
 
     def _init_cap(self):
         if self.cap:
-            self.cap.release()
-        src = self.videos[self.active_feed]
-        if str(src).isdigit():
-            target = int(src)
-            self.cap = cv2.VideoCapture(target, cv2.CAP_DSHOW)
-            if not self.cap.isOpened():
-                self.cap = cv2.VideoCapture(target)
-        else:
-            self.cap = cv2.VideoCapture(src)
+            try:
+                self.cap.release()
+            except Exception:
+                pass
+            self.cap = None
+        src = self.videos.get(self.active_feed, "0")
+        try:
+            if str(src).isdigit():
+                target = int(src)
+                self.cap = cv2.VideoCapture(target, cv2.CAP_DSHOW)
+                if not self.cap.isOpened():
+                    self.cap = cv2.VideoCapture(target)
+            else:
+                self.cap = cv2.VideoCapture(src)
+        except Exception:
+            self.cap = None
         self.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
 
     def set_feed(self, feed_name: str):
@@ -73,19 +93,36 @@ class WebStreamEngine:
 
     def get_frame(self) -> bytes:
         with self.lock:
+            now = time.time()
             if not self.cap or not self.cap.isOpened():
-                self._init_cap()
+                if (now - self.last_reconnect_time) > 2.0:
+                    self.last_reconnect_time = now
+                    self._init_cap()
 
             if not self.cap or not self.cap.isOpened():
-                return b""
+                return self._generate_disconnected_frame("CAMERA NOT AVAILABLE")
 
-            ret, frame = self.cap.read()
+            try:
+                ret, frame = self.cap.read()
+            except Exception:
+                ret, frame = False, None
+
             if not ret or frame is None:
-                if not self.videos[self.active_feed].isdigit():
-                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    ret, frame = self.cap.read()
+                src_str = str(self.videos.get(self.active_feed, ""))
+                if not src_str.isdigit():
+                    try:
+                        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        ret, frame = self.cap.read()
+                    except Exception:
+                        ret, frame = False, None
                 if not ret or frame is None:
-                    return b""
+                    try:
+                        self.cap.release()
+                    except Exception:
+                        pass
+                    self.cap = None
+                    self.last_reconnect_time = now
+                    return self._generate_disconnected_frame("CAMERA FEED DISCONNECTED")
 
         # Detection & Tracking
         results = self.detector(frame, classes=[0], conf=self.conf, verbose=False)

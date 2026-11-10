@@ -66,14 +66,28 @@ class InferenceProfiler:
             t_total_end = time.perf_counter_ns()
             total_times.append((t_total_end - t0) / 1e6)
 
+        if not total_times:
+            return {
+                "num_runs": 0,
+                "preprocess_mean_ms": 0.0,
+                "compute_mean_ms": 0.0,
+                "postprocess_mean_ms": 0.0,
+                "total_latency_mean_ms": 0.0,
+                "total_latency_p95_ms": 0.0,
+                "fps": 0.0
+            }
+
+        mean_total = float(np.mean(total_times))
+        fps_val = round(1000.0 / mean_total, 1) if mean_total > 1e-4 else 0.0
+
         return {
             "num_runs": self.test_runs,
-            "preprocess_mean_ms": round(float(np.mean(preprocess_times)), 2),
-            "compute_mean_ms": round(float(np.mean(compute_times)), 2),
-            "postprocess_mean_ms": round(float(np.mean(postprocess_times)), 2),
-            "total_latency_mean_ms": round(float(np.mean(total_times)), 2),
+            "preprocess_mean_ms": round(float(np.mean(preprocess_times)), 2) if preprocess_times else 0.0,
+            "compute_mean_ms": round(float(np.mean(compute_times)), 2) if compute_times else 0.0,
+            "postprocess_mean_ms": round(float(np.mean(postprocess_times)), 2) if postprocess_times else 0.0,
+            "total_latency_mean_ms": round(mean_total, 2),
             "total_latency_p95_ms": round(float(np.percentile(total_times, 95)), 2),
-            "fps": round(1000.0 / float(np.mean(total_times)), 1)
+            "fps": fps_val
         }
 
     def generate_markdown_report(self, stats: Dict[str, Any]) -> str:

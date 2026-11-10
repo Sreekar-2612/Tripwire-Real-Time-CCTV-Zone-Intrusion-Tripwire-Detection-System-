@@ -83,3 +83,64 @@ def test_insufficient_keypoints_graceful_handling(classifier):
     res = classifier.classify_pose(kpts, speed_mps=1.0)
     assert res["posture"] == PostureType.UNKNOWN.value
     assert res["confidence"] == 0.0
+
+def test_standing_stationary_posture(classifier):
+    """Verify that an upright person standing stationary is classified as STANDING with low threat."""
+    kpts = np.zeros((17, 3), dtype=np.float32)
+    kpts[:, 2] = 0.95
+    # Upright vertical torso (angle close to 90 deg)
+    kpts[PoseKineticClassifier.LEFT_SHOULDER] = [100.0, 100.0, 0.95]
+    kpts[PoseKineticClassifier.RIGHT_SHOULDER] = [120.0, 100.0, 0.95]
+    kpts[PoseKineticClassifier.LEFT_HIP] = [100.0, 220.0, 0.95]
+    kpts[PoseKineticClassifier.RIGHT_HIP] = [120.0, 220.0, 0.95]
+
+    res = classifier.classify_pose(kpts, speed_mps=0.1)
+    assert res["posture"] == PostureType.STANDING.value
+    assert res["threat_level"] == 1
+
+def test_keypoint_low_confidence_filtering(classifier):
+    """Verify that joints with confidence below threshold are excluded from midpoint estimation."""
+    kpts = np.zeros((17, 3), dtype=np.float32)
+    # Only left shoulder and right hip above threshold
+    kpts[PoseKineticClassifier.LEFT_SHOULDER] = [100.0, 100.0, 0.9]
+    kpts[PoseKineticClassifier.RIGHT_SHOULDER] = [500.0, 500.0, 0.1]  # Should be ignored (conf < 0.35)
+    kpts[PoseKineticClassifier.LEFT_HIP] = [0.0, 0.0, 0.1]           # Should be ignored
+    kpts[PoseKineticClassifier.RIGHT_HIP] = [100.0, 200.0, 0.9]
+
+    res = classifier.classify_pose(kpts, speed_mps=0.0)
+    # Mid-shoulder should resolve to left shoulder (100, 100) and mid-hip to right hip (100, 200) -> upright standing
+    assert res["posture"] == PostureType.STANDING.value
+
+def test_classify_keypoints_posture_helper():
+    """Verify convenience helper function classify_keypoints_posture works on numpy arrays and lists."""
+    from cv_core.kinetics.pose_classifier import classify_keypoints_posture
+    
+    # Construct crawling posture
+    kpts = np.zeros((17, 3), dtype=np.float32)
+    kpts[:, 2] = 0.95
+    kpts[PoseKineticClassifier.LEFT_SHOULDER] = [200.0, 400.0, 0.95]
+    kpts[PoseKineticClassifier.RIGHT_SHOULDER] = [200.0, 410.0, 0.95]
+    kpts[PoseKineticClassifier.LEFT_HIP] = [100.0, 405.0, 0.95]
+    kpts[PoseKineticClassifier.RIGHT_HIP] = [100.0, 415.0, 0.95]
+
+    res = classify_keypoints_posture(kpts, speed_mps=0.6)
+    assert res["posture"] == PostureType.CRAWLING.value
+    assert res["threat_level"] >= 8
+
+def test_draw_pose_skeleton_renders_without_error():
+    """Verify draw_pose_skeleton annotates an image canvas properly."""
+    import cv2
+    from cv_core.kinetics.pose_classifier import draw_pose_skeleton
+    
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    kpts = np.zeros((17, 3), dtype=np.float32)
+    kpts[:, 0] = np.linspace(100, 300, 17)
+    kpts[:, 1] = np.linspace(100, 400, 17)
+    kpts[:, 2] = 0.9
+    
+    annotated = draw_pose_skeleton(frame, kpts)
+    assert annotated.shape == (480, 640, 3)
+    # Ensure drawing modified pixels
+    assert np.count_nonzero(annotated) > 0
+
+

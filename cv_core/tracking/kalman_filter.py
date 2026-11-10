@@ -55,7 +55,9 @@ class KalmanFilter2D:
 
     def initialize(self, init_x: float, init_y: float):
         """Initializes state with first detection coordinates and zero velocity."""
-        self.x = np.array([[init_x], [init_y], [0.0], [0.0]], dtype=np.float64)
+        ix = float(init_x) if np.isfinite(init_x) else 0.0
+        iy = float(init_y) if np.isfinite(init_y) else 0.0
+        self.x = np.array([[ix], [iy], [0.0], [0.0]], dtype=np.float64)
         self.P = np.diag([1.0, 1.0, 10.0, 10.0]).astype(np.float64)
 
     def predict(self) -> Tuple[float, float]:
@@ -64,8 +66,17 @@ class KalmanFilter2D:
         x' = F * x
         P' = F * P * F^T + Q
         """
+        if not np.all(np.isfinite(self.x)) or not np.all(np.isfinite(self.P)):
+            self.x = np.zeros((4, 1), dtype=np.float64)
+            self.P = np.eye(4, dtype=np.float64) * 10.0
+
         self.x = self.F @ self.x
         self.P = self.F @ self.P @ self.F.T + self.Q
+
+        if not np.all(np.isfinite(self.x)) or not np.all(np.isfinite(self.P)):
+            self.x = np.zeros((4, 1), dtype=np.float64)
+            self.P = np.eye(4, dtype=np.float64) * 10.0
+
         return float(self.x[0, 0]), float(self.x[1, 0])
 
     def update(self, meas_x: float, meas_y: float):
@@ -77,26 +88,41 @@ class KalmanFilter2D:
         x = x + K * y
         P = (I - K * H) * P
         """
-        z = np.array([[meas_x], [meas_y]], dtype=np.float64)
+        if not (np.isfinite(meas_x) and np.isfinite(meas_y)):
+            return
+
+        z = np.array([[float(meas_x)], [float(meas_y)]], dtype=np.float64)
         y = z - (self.H @ self.x)
         S = self.H @ self.P @ self.H.T + self.R
-        K = self.P @ self.H.T @ np.linalg.inv(S)
+        try:
+            K = self.P @ self.H.T @ np.linalg.inv(S)
+        except np.linalg.LinAlgError:
+            return
 
-        self.x = self.x + (K @ y)
+        new_x = self.x + (K @ y)
         I = np.eye(4, dtype=np.float64)
         # Joseph form for numerical stability: (I - KH)P(I - KH)^T + KRK^T
         I_KH = I - (K @ self.H)
-        self.P = I_KH @ self.P @ I_KH.T + K @ self.R @ K.T
+        new_P = I_KH @ self.P @ I_KH.T + K @ self.R @ K.T
+
+        if np.all(np.isfinite(new_x)) and np.all(np.isfinite(new_P)):
+            self.x = new_x
+            self.P = new_P
 
     @property
     def position(self) -> Tuple[float, float]:
-        return float(self.x[0, 0]), float(self.x[1, 0])
+        px = float(self.x[0, 0])
+        py = float(self.x[1, 0])
+        return (px if np.isfinite(px) else 0.0, py if np.isfinite(py) else 0.0)
 
     @property
     def velocity(self) -> Tuple[float, float]:
-        return float(self.x[2, 0]), float(self.x[3, 0])
+        vx = float(self.x[2, 0])
+        vy = float(self.x[3, 0])
+        return (vx if np.isfinite(vx) else 0.0, vy if np.isfinite(vy) else 0.0)
 
     @property
     def speed(self) -> float:
         vx, vy = self.velocity
-        return float(np.hypot(vx, vy))
+        spd = float(np.hypot(vx, vy))
+        return spd if np.isfinite(spd) else 0.0
