@@ -4,7 +4,7 @@
 [![OpenCV](https://img.shields.io/badge/OpenCV-Computer%20Vision-green.svg)](https://opencv.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-Deep%20Learning-orange.svg)](https://pytorch.org/)
 [![YOLOv8](https://img.shields.io/badge/YOLOv8-Object%20Detection-red.svg)](https://github.com/ultralytics/ultralytics)
-[![Tests: 37 Passed](https://img.shields.io/badge/pytest-37%20passed-brightgreen.svg)](tests/)
+[![Tests: 53 Passed](https://img.shields.io/badge/pytest-53%20passed-brightgreen.svg)](tests/)
 [![MOTA: 96.8%](https://img.shields.io/badge/MOTA-96.8%25-success.svg)](evaluation/EVALUATION_REPORT.md)
 [![IDF1: 94.7%](https://img.shields.io/badge/IDF1-94.7%25-success.svg)](evaluation/EVALUATION_REPORT.md)
 [![Throughput: 40+ FPS](https://img.shields.io/badge/Throughput-40.1%20FPS%20Real--Time-blueviolet.svg)](cv_core/models/benchmark.py)
@@ -190,7 +190,7 @@ The production web interface (`app_streamlit.py`) incorporates industrial-grade 
 • Developed a custom multi-target Hungarian tracker combining discrete 4D constant-velocity Kalman filtering and IoU bipartite assignment, achieving 96.8% MOTA, 94.7% IDF1, and 0 ID switches across surveillance benchmarks.
 • Formulated a 17-keypoint biomechanical pose kinetic classifier computing dynamic torso inclination angles and joint kinematics to distinguish climbing, crawling, sprinting, and fallen medical emergencies.
 • Engineered scale-invariant metric polygon zones and directional vector cross-product tripwires with 2-stage temporal debounce, eliminating 95%+ of transient false alarms.
-• Built a 37-test automated regression suite covering projective geometry round-trips, Kalman covariance coasting under occlusion, and trajectory-level IDF1 tracking benchmarks.
+• Built a 53-test automated regression suite covering projective geometry round-trips, Kalman covariance coasting under occlusion, and trajectory-level IDF1 tracking benchmarks.
 ```
 
 ---
@@ -260,7 +260,7 @@ python scripts/demo_gui.py
 # Profile inference throughput across resolutions
 python scripts/benchmark_models.py --imgsz 640 --runs 50
 
-# Run 37-test regression test suite
+# Run 53-test regression test suite
 python -m pytest -v
 ```
 
@@ -292,13 +292,14 @@ TRIP-WIRE/
 ├── evaluation/
 │   ├── evaluate_mot.py         # MOTA / MOTP / IDF1 benchmark calculator
 │   └── EVALUATION_REPORT.md    # Formal quantitative CV evaluation report
-├── tests/                      # 37 Automated Unit & Integration Tests
+├── tests/                      # 53 Automated Unit & Integration Tests
 │   ├── test_pillar1_homography.py # Geometry, DLT & coordinate round-trips (10 tests)
 │   ├── test_pillar2_tracker.py    # Kalman convergence, Hungarian & occlusion (12 tests)
 │   ├── test_pillar3_kinetics.py   # Pose action kinetics & speed gating (9 tests)
 │   ├── test_pillar4_benchmark.py  # Profiler execution & reporting (1 test)
 │   ├── test_pillar5_pipeline.py   # End-to-end pipeline & calibration (2 tests)
-│   └── test_pillar6_mot.py        # MOTA / MOTP / IDF1 evaluation engine (3 tests)
+│   ├── test_pillar6_mot.py        # MOTA / MOTP / IDF1 evaluation engine (3 tests)
+│   └── test_bug_fixes_and_reliability.py # Reliability, NaN guards & edge cases (16 tests)
 ├── data/
 │   ├── calibration.json        # Calibrated ground homography transformation matrix
 │   └── videos/                 # CCTV benchmark sequences & breach test templates

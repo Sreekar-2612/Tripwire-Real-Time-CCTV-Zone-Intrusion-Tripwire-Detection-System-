@@ -5,7 +5,7 @@
 [![Tracking: MOTA 96.8%](https://img.shields.io/badge/MOTA-96.8%25-brightgreen.svg)]()
 [![IDF1: 94.7%](https://img.shields.io/badge/IDF1-94.7%25-brightgreen.svg)]()
 [![Throughput: 40+ FPS](https://img.shields.io/badge/Throughput-40.1%20FPS%20Real--Time-orange.svg)]()
-[![Test Suite: 37 Passed](https://img.shields.io/badge/pytest-37%20passed-success.svg)]()
+[![Test Suite: 53 Passed](https://img.shields.io/badge/pytest-53%20passed-success.svg)]()
 
 ---
 
@@ -264,7 +264,7 @@ Optimized for **Senior / Staff Computer Vision & Machine Learning Engineer** rol
 • Developed a custom multi-target Hungarian tracker combining discrete 4D constant-velocity Kalman filtering and IoU bipartite assignment, achieving 96.8% MOTA, 94.7% IDF1, and 0 ID switches across surveillance benchmarks.
 • Formulated a 17-keypoint biomechanical pose kinetic classifier computing dynamic torso inclination angles and joint kinematics to distinguish climbing, crawling, sprinting, and fallen medical emergencies.
 • Engineered scale-invariant metric polygon zones and directional vector cross-product tripwires with 2-stage temporal debounce, eliminating 95%+ of transient false alarms.
-• Built a 37-test automated regression suite covering projective geometry round-trips, Kalman covariance coasting under occlusion, and trajectory-level IDF1 tracking benchmarks.
+• Built a 53-test automated regression suite covering projective geometry round-trips, Kalman covariance coasting under occlusion, and trajectory-level IDF1 tracking benchmarks.
 ```
 
 ---
@@ -304,22 +304,23 @@ Optimized for **Senior / Staff Computer Vision & Machine Learning Engineer** rol
 
 ## 7. Verification & Quality Assurance Suite
 
-TRIP-WIRE contains a 37-test automated unit and integration suite executed via `pytest`:
+TRIP-WIRE contains a 53-test automated unit and integration suite executed via `pytest`:
 
 ```
 ============================= test session starts =============================
 platform win32 -- Python 3.14.10, pytest-9.1.1, pluggy-1.7.0
 rootdir: TRIP-WIRE, configfile: pytest.ini
-collected 37 items
+collected 53 items
 
-tests/test_pillar1_homography.py ..........                              [ 27%]
-tests/test_pillar2_tracker.py ............                               [ 59%]
-tests/test_pillar3_kinetics.py .........                                 [ 83%]
-tests/test_pillar4_benchmark.py .                                        [ 86%]
-tests/test_pillar5_pipeline.py ..                                        [ 91%]
+tests/test_bug_fixes_and_reliability.py ................                 [ 30%]
+tests/test_pillar1_homography.py ..........                              [ 49%]
+tests/test_pillar2_tracker.py ............                               [ 71%]
+tests/test_pillar3_kinetics.py .........                                 [ 88%]
+tests/test_pillar4_benchmark.py .                                        [ 90%]
+tests/test_pillar5_pipeline.py ..                                        [ 94%]
 tests/test_pillar6_mot.py ...                                            [100%]
 
-============================= 37 passed in 8.65s ==============================
+============================= 53 passed in 9.77s ==============================
 ```
 
 - **Pillar 1 (Geometry & DLT - 10 tests):** Verifies sub-millimeter roundtrip reprojection, singular matrix detection, projective singularities, ground velocity calculations, and 3D polygon area/perimeter calculations.
@@ -328,3 +329,4 @@ tests/test_pillar6_mot.py ...                                            [100%]
 - **Pillar 4 (Benchmark Profiler - 1 test):** Verifies latency breakdown recording across preprocessing, neural compute, postprocessing, and HUD rendering.
 - **Pillar 5 (End-to-End Pipeline - 2 tests):** Verifies headless and calibrated video processing pipelines end-to-end.
 - **Pillar 6 (MOT Evaluation - 3 tests):** Verifies standard MOTA, MOTP, and true global bipartite matching trajectory IDF1 metrics.
+- **Reliability & Edge Cases (16 tests):** Verifies NaN/Inf coordinate filtering, camera disconnect fallbacks, reconnect cooldowns, zero velocity targets, and projective singularity handling.
