@@ -97,7 +97,11 @@ def run_cv_engine(
                         })
 
             # 2. Multi-Target Tracking & Homography Projection
-            active_tracks = tracker.update(detections, homography_transformer=transformer)
+            active_tracks = tracker.update(
+                detections,
+                homography_transformer=transformer,
+                pose_classifier=pose_classifier
+            )
 
             # 3. Zone Breaches & Pose Kinetics
             radar_tracks = []
