@@ -1,0 +1,107 @@
+{
+  "bev_caching": {
+    "runs": 300,
+    "baseline_mean_ms": 7.021,
+    "baseline_p95_ms": 8.678,
+    "baseline_fps": 142.4,
+    "optimized_mean_ms": 2.626,
+    "optimized_p95_ms": 3.174,
+    "optimized_fps": 380.7,
+    "speedup_factor": 2.67,
+    "latency_reduction_pct": 62.6,
+    "visual_fidelity_mse": 0.0
+  },
+  "diou_matching": {
+    "displacement_eval": [
+      {
+        "displacement_px": 10.0,
+        "iou_overlap": 0.6,
+        "diou_affinity": 0.589,
+        "iou_matched": true,
+        "diou_matched": true
+      },
+      {
+        "displacement_px": 20.0,
+        "iou_overlap": 0.333,
+        "diou_affinity": 0.293,
+        "iou_matched": true,
+        "diou_matched": true
+      },
+      {
+        "displacement_px": 30.0,
+        "iou_overlap": 0.143,
+        "diou_affinity": 0.063,
+        "iou_matched": true,
+        "diou_matched": true
+      },
+      {
+        "displacement_px": 40.0,
+        "iou_overlap": 0.0,
+        "diou_affinity": -0.125,
+        "iou_matched": false,
+        "diou_matched": true
+      },
+      {
+        "displacement_px": 50.0,
+        "iou_overlap": 0.0,
+        "diou_affinity": -0.172,
+        "iou_matched": false,
+        "diou_matched": true
+      },
+      {
+        "displacement_px": 60.0,
+        "iou_overlap": 0.0,
+        "diou_affinity": -0.22,
+        "iou_matched": false,
+        "diou_matched": true
+      },
+      {
+        "displacement_px": 70.0,
+        "iou_overlap": 0.0,
+        "diou_affinity": -0.265,
+        "iou_matched": false,
+        "diou_matched": false
+      },
+      {
+        "displacement_px": 80.0,
+        "iou_overlap": 0.0,
+        "diou_affinity": -0.308,
+        "iou_matched": false,
+        "diou_matched": false
+      }
+    ],
+    "max_tolerated_displacement_iou_px": 35.0,
+    "max_tolerated_displacement_diou_px": 80.0,
+    "diou_tracking_retention": "100% ID Preservation over high-speed frame leaps"
+  },
+  "ankle_ground_contact": {
+    "frames_evaluated": 50,
+    "bbox_bottom_mean_error_m": 0.268,
+    "bbox_bottom_std_error_m": 0.137,
+    "ankle_contact_mean_error_m": 0.028,
+    "ankle_contact_std_error_m": 0.02,
+    "error_reduction_pct": 89.5,
+    "variance_reduction_factor": 6.87
+  },
+  "temporal_posture_smoothing": {
+    "total_frames": 100,
+    "injected_glitch_rate_pct": 12.0,
+    "baseline_single_frame_flickers": 27,
+    "baseline_posture_accuracy_pct": 86.0,
+    "optimized_smoothed_flickers": 2,
+    "optimized_posture_accuracy_pct": 99.0,
+    "flicker_reduction_pct": 92.6
+  },
+  "pipeline_latency": {
+    "yolo_inference_mean_ms": 160.44,
+    "yolo_inference_p95_ms": 187.33,
+    "tracker_diou_mean_ms": 2.57,
+    "tracker_diou_p95_ms": 3.152,
+    "homography_projection_mean_ms": 0.391,
+    "homography_projection_p95_ms": 0.646,
+    "bev_cached_render_mean_ms": 1.712,
+    "bev_cached_render_p95_ms": 2.206,
+    "total_pipeline_mean_ms": 165.12,
+    "total_fps": 6.1
+  }
+}

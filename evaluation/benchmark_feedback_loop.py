@@ -34,8 +34,8 @@ def benchmark_bev_radar_caching(runs: int = 500) -> Dict[str, Any]:
     """
     renderer = BEVRadarRenderer(radar_size=500, world_extent_m=20.0, grid_step_m=2.0)
     zones = [
-        MetricZone3D("Restricted", [(2.0, 2.0), (8.0, 2.0), (8.0, 8.0), (2.0, 8.0)], "critical", "polygon"),
-        MetricZone3D("Tripwire", [(0.0, 10.0), (20.0, 10.0)], "warning", "tripwire")
+        MetricZone3D("z1", "Restricted", "polygon", [(2.0, 2.0), (8.0, 2.0), (8.0, 8.0), (2.0, 8.0)]),
+        MetricZone3D("z2", "Tripwire", "tripwire", [(0.0, 10.0), (20.0, 10.0)])
     ]
     tracks = [
         {"track_id": 1, "world_pos": (5.0, 6.0), "world_trail": [(5.0, 5.0), (5.0, 5.5), (5.0, 6.0)], "speed_kmh": 6.5, "vx": 0.0, "vy": 1.8, "is_breaching": True},
@@ -43,35 +43,13 @@ def benchmark_bev_radar_caching(runs: int = 500) -> Dict[str, Any]:
         {"track_id": 3, "world_pos": (3.0, 15.0), "world_trail": [(3.0, 12.0), (3.0, 13.5), (3.0, 15.0)], "speed_kmh": 12.0, "vx": 0.0, "vy": 3.3, "is_breaching": True}
     ]
 
-    # Baseline: Dynamic re-rasterization per frame (as was originally done before caching)
+    # Baseline: Dynamic re-rasterization per frame (re-computing static background from scratch)
     def render_baseline():
-        canvas = np.zeros((renderer.size, renderer.size, 3), dtype=np.uint8)
-        canvas[:] = renderer.bg_color
-        num_grid_lines = int(renderer.world_extent / renderer.grid_step)
-        for i in range(1, num_grid_lines + 1):
-            dist_m = i * renderer.grid_step
-            pos = int(dist_m * renderer.scale)
-            cv2.line(canvas, (pos, 0), (pos, renderer.size), (35, 42, 50), 1, cv2.LINE_AA)
-            cv2.line(canvas, (0, pos), (renderer.size, pos), (35, 42, 50), 1, cv2.LINE_AA)
-            cv2.putText(canvas, f"{dist_m:.0f}m", (pos + 2, renderer.size - 6),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.32, (100, 115, 130), 1, cv2.LINE_AA)
-            cv2.putText(canvas, f"{dist_m:.0f}m", (4, renderer.size - pos - 4),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.32, (100, 115, 130), 1, cv2.LINE_AA)
-        for r_m in [5.0, 10.0, 15.0]:
-            r_px = int(r_m * renderer.scale)
-            if r_px < renderer.size:
-                cv2.circle(canvas, (0, renderer.size - 1), r_px, (45, 55, 65), 1, cv2.LINE_AA)
-        # Dynamic layers
-        zone_overlay = canvas.copy()
-        for z in zones:
-            pts = [renderer.world_to_radar_pixel(x, y) for (x, y) in z.polygon_pts]
-            if len(pts) >= 3:
-                cv2.fillPoly(zone_overlay, [np.array(pts, dtype=np.int32)], (0, 0, 180))
-        cv2.addWeighted(zone_overlay, 0.35, canvas, 0.65, 0, canvas)
-        for trk in tracks:
-            px, py = renderer.world_to_radar_pixel(*trk["world_pos"])
-            cv2.circle(canvas, (px, py), 5, (0, 0, 255), -1, cv2.LINE_AA)
-        return canvas
+        orig_bg = renderer._static_bg
+        renderer._static_bg = renderer._precompute_static_background()
+        out = renderer.render(zones, tracks)
+        renderer._static_bg = orig_bg
+        return out
 
     # Warmup
     for _ in range(10):
@@ -201,12 +179,10 @@ def benchmark_ankle_contact_vs_bbox_bottom() -> Dict[str, Any]:
     Ankle keypoint ground contact vs Bounding Box bottom center.
     Tests vertical jitter and metric reprojection stability under simulated gait oscillations.
     """
-    # Create a calibrated Homography Transformer (camera viewing ground plane obliquely)
-    transformer = HomographyTransformer()
     # 4 image points to 4 world points (meters)
     img_pts = np.array([[200.0, 150.0], [440.0, 150.0], [600.0, 420.0], [40.0, 420.0]], dtype=np.float32)
     world_pts = np.array([[0.0, 15.0], [6.0, 15.0], [6.0, 2.0], [0.0, 2.0]], dtype=np.float32)
-    transformer.calibrate_dlt(img_pts, world_pts)
+    transformer = HomographyTransformer.from_point_correspondences(img_pts, world_pts)
 
     # Simulate 50 frames of a person walking across the ground plane at constant Y_world = 5.0m, X_world: 1.0m -> 5.0m
     num_frames = 50
@@ -370,9 +346,7 @@ def benchmark_pipeline_latency_profile() -> Dict[str, Any]:
         tracker_times.append((time.perf_counter_ns() - t0) / 1e6)
 
     # 4. Homography Batch Transform
-    transformer = HomographyTransformer()
-    transformer.H = np.eye(3, dtype=np.float64)
-    transformer.is_calibrated = True
+    transformer = HomographyTransformer(H_matrix=np.eye(3, dtype=np.float64))
     homography_times = []
     pts = [(120.0 + i*40, 220.0) for i in range(5)]
     for _ in range(500):
@@ -383,7 +357,7 @@ def benchmark_pipeline_latency_profile() -> Dict[str, Any]:
 
     # 5. BEV Radar Cached Rendering
     renderer = BEVRadarRenderer(radar_size=500, world_extent_m=20.0)
-    zones = [MetricZone3D("Z1", [(2.0, 2.0), (8.0, 2.0), (8.0, 8.0), (2.0, 8.0)], "critical", "polygon")]
+    zones = [MetricZone3D("z1", "Z1", "polygon", [(2.0, 2.0), (8.0, 2.0), (8.0, 8.0), (2.0, 8.0)])]
     radar_tracks = [{"track_id": 1, "world_pos": (5.0, 5.0), "world_trail": [(5.0, 5.0)], "speed_kmh": 5.0, "vx": 1.0, "vy": 0.0, "is_breaching": True}]
     bev_times = []
     for _ in range(200):
