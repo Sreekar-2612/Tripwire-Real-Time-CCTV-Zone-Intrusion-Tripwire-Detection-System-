@@ -193,7 +193,7 @@ class SingleTrack:
         # Pose & Kinetic Attributes
         self.keypoints: Optional[np.ndarray] = None
         self.posture: str = "standing"
-        self.posture_history: List[str] = [self.posture]
+        self.posture_history: List[str] = []
         self.threat_level: int = 1
         self.pose_indicators: List[str] = []
 
@@ -309,9 +309,21 @@ class SingleTrack:
             if len(threats) >= 2:
                 from collections import Counter
                 self.posture = Counter(threats).most_common(1)[0][0]
+            elif len(self.posture_history) == 1:
+                self.posture = raw_p
             else:
                 from collections import Counter
-                self.posture = Counter(self.posture_history).most_common(1)[0][0]
+                counts = Counter(self.posture_history)
+                max_count = max(counts.values())
+                candidates = [p for p, c in counts.items() if c == max_count]
+                if len(candidates) == 1:
+                    self.posture = candidates[0]
+                else:
+                    # In case of count ties, choose candidate observed most recently
+                    for p in reversed(self.posture_history):
+                        if p in candidates:
+                            self.posture = p
+                            break
 
             self.threat_level = posture_info.get("threat_level", self.threat_level)
             self.pose_indicators = posture_info.get("indicators", self.pose_indicators)

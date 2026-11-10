@@ -1,14 +1,14 @@
 {
   "bev_caching": {
     "runs": 300,
-    "baseline_mean_ms": 7.021,
-    "baseline_p95_ms": 8.678,
-    "baseline_fps": 142.4,
-    "optimized_mean_ms": 2.626,
-    "optimized_p95_ms": 3.174,
-    "optimized_fps": 380.7,
-    "speedup_factor": 2.67,
-    "latency_reduction_pct": 62.6,
+    "baseline_mean_ms": 6.989,
+    "baseline_p95_ms": 8.403,
+    "baseline_fps": 143.1,
+    "optimized_mean_ms": 2.674,
+    "optimized_p95_ms": 3.354,
+    "optimized_fps": 374.0,
+    "speedup_factor": 2.61,
+    "latency_reduction_pct": 61.7,
     "visual_fidelity_mse": 0.0
   },
   "diou_matching": {
@@ -93,15 +93,15 @@
     "flicker_reduction_pct": 92.6
   },
   "pipeline_latency": {
-    "yolo_inference_mean_ms": 160.44,
-    "yolo_inference_p95_ms": 187.33,
-    "tracker_diou_mean_ms": 2.57,
-    "tracker_diou_p95_ms": 3.152,
-    "homography_projection_mean_ms": 0.391,
-    "homography_projection_p95_ms": 0.646,
-    "bev_cached_render_mean_ms": 1.712,
-    "bev_cached_render_p95_ms": 2.206,
-    "total_pipeline_mean_ms": 165.12,
-    "total_fps": 6.1
+    "yolo_inference_mean_ms": 163.11,
+    "yolo_inference_p95_ms": 186.7,
+    "tracker_diou_mean_ms": 2.287,
+    "tracker_diou_p95_ms": 2.725,
+    "homography_projection_mean_ms": 0.353,
+    "homography_projection_p95_ms": 0.384,
+    "bev_cached_render_mean_ms": 1.737,
+    "bev_cached_render_p95_ms": 2.019,
+    "total_pipeline_mean_ms": 167.49,
+    "total_fps": 6.0
   }
 }
