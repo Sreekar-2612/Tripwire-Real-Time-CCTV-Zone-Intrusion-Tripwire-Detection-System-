@@ -1,5 +1,6 @@
 from enum import Enum
 from typing import List, Tuple, Dict, Optional, Any, TYPE_CHECKING
+from collections import Counter
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
@@ -193,7 +194,7 @@ class SingleTrack:
         # Pose & Kinetic Attributes
         self.keypoints: Optional[np.ndarray] = None
         self.posture: str = "standing"
-        self.posture_history: List[str] = [self.posture]
+        self.posture_history: List[str] = []
         self.threat_level: int = 1
         self.pose_indicators: List[str] = []
 
@@ -325,11 +326,21 @@ class SingleTrack:
             # High threat postures (climbing, crawling, fallen) take priority if observed in >= 2 frames
             threats = [p for p in self.posture_history if p in ("climbing", "crawling", "fallen")]
             if len(threats) >= 2:
-                from collections import Counter
-                self.posture = Counter(threats).most_common(1)[0][0]
-            else:
-                from collections import Counter
-                self.posture = Counter(self.posture_history).most_common(1)[0][0]
+                threat_counts = Counter(threats).most_common()
+                max_cnt = threat_counts[0][1]
+                top_threats = [p for p, c in threat_counts if c == max_cnt]
+                if self.posture in top_threats:
+                    pass  # Retain current posture on tie (hysteresis)
+                else:
+                    self.posture = top_threats[0]
+            elif self.posture_history:
+                posture_counts = Counter(self.posture_history).most_common()
+                max_cnt = posture_counts[0][1]
+                top_postures = [p for p, c in posture_counts if c == max_cnt]
+                if self.posture in top_postures:
+                    pass  # Retain current posture on tie (hysteresis)
+                else:
+                    self.posture = top_postures[0]
 
             self.threat_level = posture_info.get("threat_level", self.threat_level)
             self.pose_indicators = posture_info.get("indicators", self.pose_indicators)
@@ -656,6 +667,7 @@ class MultiTargetTracker:
                     "vx": vx,
                     "vy": vy,
                     "speed": speed_kmh,
+                    "speed_kmh": speed_kmh,
                     "state": trk.state.value,
                     "posture": trk.posture,
                     "threat_level": trk.threat_level,

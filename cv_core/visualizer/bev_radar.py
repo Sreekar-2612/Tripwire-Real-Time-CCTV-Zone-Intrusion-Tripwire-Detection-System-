@@ -85,6 +85,17 @@ class BEVRadarRenderer:
         for z in zones:
             coords = getattr(z, "world_coords", [])
             z_type = getattr(z, "zone_type", "polygon")
+            if z_type != "tripwire" and len(coords) >= 3:
+                pts = [self.world_to_radar_pixel(p[0], p[1]) for p in coords]
+                pts_arr = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+                cv2.fillPoly(zone_overlay, [pts_arr], (0, 40, 100))
+
+        # Blend polygon fills before rendering crisp wireframes, labels, and track blips
+        cv2.addWeighted(zone_overlay, 0.4, canvas, 0.6, 0, canvas)
+
+        for z in zones:
+            coords = getattr(z, "world_coords", [])
+            z_type = getattr(z, "zone_type", "polygon")
             name = getattr(z, "name", "Zone")
 
             if z_type == "tripwire" and len(coords) >= 2:
@@ -99,11 +110,8 @@ class BEVRadarRenderer:
             elif len(coords) >= 3:
                 pts = [self.world_to_radar_pixel(p[0], p[1]) for p in coords]
                 pts_arr = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
-                cv2.fillPoly(zone_overlay, [pts_arr], (0, 40, 100))
                 cv2.polylines(canvas, [pts_arr], isClosed=True, color=(0, 120, 255), thickness=1, lineType=cv2.LINE_AA)
                 cv2.putText(canvas, name, pts[0], cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 160, 255), 1, cv2.LINE_AA)
-
-        cv2.addWeighted(zone_overlay, 0.4, canvas, 0.6, 0, canvas)
 
         # 3. Draw Tracked Intruders
         for t in tracks:
@@ -144,7 +152,7 @@ class BEVRadarRenderer:
                     cv2.arrowedLine(canvas, (px, py), (tip_x, tip_y), (0, 255, 120), 2, tipLength=0.3)
 
             # Metadata Tag (ID + km/h)
-            speed_kmh = float(t.get("speed_kmh", 0.0))
+            speed_kmh = float(t.get("speed_kmh", t.get("speed", 0.0)))
             if not np.isfinite(speed_kmh):
                 speed_kmh = 0.0
             tag = f"#{tid} {speed_kmh:.1f}km/h"

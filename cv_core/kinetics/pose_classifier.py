@@ -315,6 +315,8 @@ def draw_pose_skeleton(
     for idx1, idx2 in COCO_SKELETON:
         if has_conf and (kpts[idx1, 2] < conf_thresh or kpts[idx2, 2] < conf_thresh):
             continue
+        if not (np.isfinite(kpts[idx1, 0]) and np.isfinite(kpts[idx1, 1]) and np.isfinite(kpts[idx2, 0]) and np.isfinite(kpts[idx2, 1])):
+            continue
         p1 = (int(kpts[idx1, 0]), int(kpts[idx1, 1]))
         p2 = (int(kpts[idx2, 0]), int(kpts[idx2, 1]))
         cv2.line(frame, p1, p2, limb_color, 2, cv2.LINE_AA)
@@ -323,7 +325,10 @@ def draw_pose_skeleton(
     for i in range(17):
         if has_conf and kpts[i, 2] < conf_thresh:
             continue
-        pt = (int(kpts[i, 0]), int(kpts[i, 1]))
-        cv2.circle(frame, pt, 3, joint_color, -1, cv2.LINE_AA)
+        pt = kpts[i, :2]
+        if not (np.isfinite(pt[0]) and np.isfinite(pt[1])):
+            continue
+        pt_int = (int(pt[0]), int(pt[1]))
+        cv2.circle(frame, pt_int, 3, joint_color, -1, cv2.LINE_AA)
 
     return frame

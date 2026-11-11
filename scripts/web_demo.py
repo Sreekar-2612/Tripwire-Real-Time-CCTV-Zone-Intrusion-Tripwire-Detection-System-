@@ -158,94 +158,94 @@ class WebStreamEngine:
                     self.last_reconnect_time = now
                     return self._generate_disconnected_frame("CAMERA FEED DISCONNECTED")
 
-        # Model Inference
-        is_pose_active = self.use_pose and (self.detector_pose is not None)
-        active_detector = self.detector_pose if is_pose_active else self.detector_standard
+            # Model Inference
+            is_pose_active = self.use_pose and (self.detector_pose is not None)
+            active_detector = self.detector_pose if is_pose_active else self.detector_standard
 
-        # Down to 0.15 for ByteTrack Two-Stage Association with torch inference mode and imgsz=480 for reduced latency
-        with torch.inference_mode():
-            results = active_detector(frame, conf=0.15, imgsz=480, verbose=False)
-        detections = []
-        for r in results:
-            if r.boxes is not None:
-                boxes = r.boxes
-                has_kpts = is_pose_active and getattr(r, "keypoints", None) is not None and len(r.keypoints.data) > 0
-                for idx_b, box in enumerate(boxes):
-                    cls_id = int(box.cls[0].cpu().numpy()) if box.cls is not None else 0
-                    if cls_id != 0:
-                        continue
-                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                    conf = float(box.conf[0].cpu().numpy())
-                    kpt = None
-                    if has_kpts and idx_b < len(r.keypoints.data):
-                        kpt = r.keypoints.data[idx_b].cpu().numpy()
-                    detections.append({
-                        "bbox": [float(x1), float(y1), float(x2), float(y2)],
-                        "confidence": conf,
-                        "foot_point": ((x1 + x2) / 2.0, float(y2)),
-                        "keypoints": kpt
-                    })
+            # Down to 0.15 for ByteTrack Two-Stage Association with torch inference mode and imgsz=480 for reduced latency
+            with torch.inference_mode():
+                results = active_detector(frame, conf=0.15, imgsz=480, verbose=False)
+            detections = []
+            for r in results:
+                if r.boxes is not None:
+                    boxes = r.boxes
+                    has_kpts = is_pose_active and getattr(r, "keypoints", None) is not None and len(r.keypoints.data) > 0
+                    for idx_b, box in enumerate(boxes):
+                        cls_id = int(box.cls[0].cpu().numpy()) if box.cls is not None else 0
+                        if cls_id != 0:
+                            continue
+                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                        conf = float(box.conf[0].cpu().numpy())
+                        kpt = None
+                        if has_kpts and idx_b < len(r.keypoints.data):
+                            kpt = r.keypoints.data[idx_b].cpu().numpy()
+                        detections.append({
+                            "bbox": [float(x1), float(y1), float(x2), float(y2)],
+                            "confidence": conf,
+                            "foot_point": ((x1 + x2) / 2.0, float(y2)),
+                            "keypoints": kpt
+                        })
 
-        tracks = self.tracker.update(
-            detections,
-            homography_transformer=self.transformer,
-            pose_classifier=self.pose_classifier if is_pose_active else None
-        )
-        radar_tracks = []
-        for trk in tracks:
-            w_pos = trk.get("world_pos")
-            is_breach = False
-            posture = trk.get("posture", "walking")
-            threat_level = trk.get("threat_level", 1)
+            tracks = self.tracker.update(
+                detections,
+                homography_transformer=self.transformer,
+                pose_classifier=self.pose_classifier if is_pose_active else None
+            )
+            radar_tracks = []
+            for trk in tracks:
+                w_pos = trk.get("world_pos")
+                is_breach = False
+                posture = trk.get("posture", "walking")
+                threat_level = trk.get("threat_level", 1)
 
-            # Spatial Zone Breaches
-            if w_pos:
-                for z in self.zones:
-                    if z.zone_type == "tripwire":
-                        world_trail = trk.get("world_trail", [])
-                        if len(world_trail) >= 2:
-                            crossing = z.check_tripwire_crossing(world_trail[-2], world_trail[-1])
-                            if crossing is not None:
-                                is_breach = True
-                                break
-                    elif z.contains_point(w_pos[0], w_pos[1]):
-                        is_breach = True
-                        break
+                # Spatial Zone Breaches
+                if w_pos:
+                    for z in self.zones:
+                        if z.zone_type == "tripwire":
+                            world_trail = trk.get("world_trail", [])
+                            if len(world_trail) >= 2:
+                                crossing = z.check_tripwire_crossing(world_trail[-2], world_trail[-1])
+                                if crossing is not None:
+                                    is_breach = True
+                                    break
+                        elif z.contains_point(w_pos[0], w_pos[1]):
+                            is_breach = True
+                            break
 
-            # Threat / Kinetic Escalation
-            if threat_level >= 7 or posture in ("climbing", "crawling", "fallen"):
-                is_breach = True
+                # Threat / Kinetic Escalation
+                if threat_level >= 7 or posture in ("climbing", "crawling", "fallen"):
+                    is_breach = True
 
-            speed_kmh = float(trk.get("speed", 0.0))
-            radar_tracks.append({
-                "track_id": trk["track_id"],
-                "world_pos": w_pos,
-                "world_trail": trk.get("world_trail", []),
-                "speed_kmh": speed_kmh,
-                "vx": trk.get("vx", 0.0),
-                "vy": trk.get("vy", 0.0),
-                "is_breaching": is_breach
-            })
+                speed_kmh = float(trk.get("speed_kmh", trk.get("speed", 0.0)))
+                radar_tracks.append({
+                    "track_id": trk["track_id"],
+                    "world_pos": w_pos,
+                    "world_trail": trk.get("world_trail", []),
+                    "speed_kmh": speed_kmh,
+                    "vx": trk.get("vx", 0.0),
+                    "vy": trk.get("vy", 0.0),
+                    "is_breaching": is_breach
+                })
 
-            # Render Skeleton Keypoints if available
-            if is_pose_active and trk.get("keypoints") is not None:
-                draw_pose_skeleton(frame, trk["keypoints"])
+                # Render Skeleton Keypoints if available
+                if is_pose_active and trk.get("keypoints") is not None:
+                    draw_pose_skeleton(frame, trk["keypoints"])
 
-            x1, y1, x2, y2 = map(int, trk["bbox"])
-            box_color = (0, 0, 255) if is_breach else (0, 240, 255)
-            cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
+                x1, y1, x2, y2 = map(int, trk["bbox"])
+                box_color = (0, 0, 255) if is_breach else (0, 240, 255)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
             
-            label_text = f"#{trk['track_id']} | {posture.upper()} | {speed_kmh:.1f} km/h"
-            cv2.putText(frame, label_text, (x1, max(16, y1 - 8)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.52, box_color, 2)
+                label_text = f"#{trk['track_id']} | {posture.upper()} | {speed_kmh:.1f} km/h"
+                cv2.putText(frame, label_text, (x1, max(16, y1 - 8)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.52, box_color, 2)
 
-        radar_img = self.radar.render(self.zones, radar_tracks)
-        dual_view = BEVRadarRenderer.create_dual_view(frame, radar_img)
+            radar_img = self.radar.render(self.zones, radar_tracks)
+            dual_view = BEVRadarRenderer.create_dual_view(frame, radar_img)
         
-        # Resize for responsive web streaming
-        dual_view_resized = cv2.resize(dual_view, (1200, 500))
-        _, jpeg = cv2.imencode(".jpg", dual_view_resized, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        return jpeg.tobytes()
+            # Resize for responsive web streaming
+            dual_view_resized = cv2.resize(dual_view, (1200, 500))
+            _, jpeg = cv2.imencode(".jpg", dual_view_resized, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            return jpeg.tobytes()
 
 engine = WebStreamEngine()
 
