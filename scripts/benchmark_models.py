@@ -8,7 +8,6 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import torch
-import numpy as np
 from cv_core.models.benchmark import InferenceProfiler
 
 def main():

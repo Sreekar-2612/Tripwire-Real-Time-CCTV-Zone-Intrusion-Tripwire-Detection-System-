@@ -16,7 +16,7 @@ from cv_core.geometry.homography import HomographyTransformer
 from cv_core.geometry.zones_3d import MetricZone3D
 from cv_core.tracking.tracker import MultiTargetTracker
 from cv_core.visualizer.bev_radar import BEVRadarRenderer
-from cv_core.kinetics.pose_classifier import PoseKineticClassifier
+from cv_core.kinetics.pose_classifier import PoseKineticClassifier, draw_pose_skeleton
 
 def run_cv_engine(
     video_source: str,
@@ -43,7 +43,9 @@ def run_cv_engine(
 
     # 2. Initialize Models & Tracker
     print("Loading YOLOv8 Detector & Tracker...")
-    detector = YOLO("yolov8n.pt")
+    pose_model_path = Path("yolov8n-pose.pt")
+    use_pose = pose_model_path.exists()
+    detector = YOLO(str(pose_model_path)) if use_pose else YOLO("yolov8n.pt")
     tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
     pose_classifier = PoseKineticClassifier()
     radar = BEVRadarRenderer(radar_size=480, world_extent_m=20.0, grid_step_m=2.0)
@@ -55,8 +57,13 @@ def run_cv_engine(
     ]
 
     # Open Video Capture
-    cap_src = int(video_source) if str(video_source).isdigit() else video_source
-    cap = cv2.VideoCapture(cap_src)
+    if str(video_source).isdigit():
+        cap_src = int(video_source)
+        cap = cv2.VideoCapture(cap_src, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            cap = cv2.VideoCapture(cap_src)
+    else:
+        cap = cv2.VideoCapture(video_source)
     if not cap.isOpened():
         print(f"❌ Error: Could not open video source: {video_source}")
         return
@@ -85,15 +92,20 @@ def run_cv_engine(
             for r in results:
                 boxes = r.boxes
                 if boxes is not None:
-                    for box in boxes:
+                    has_kpts = use_pose and getattr(r, "keypoints", None) is not None and len(r.keypoints.data) > 0
+                    for idx_b, box in enumerate(boxes):
                         x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                         conf = float(box.conf[0].cpu().numpy())
                         foot_x = (x1 + x2) / 2.0
                         foot_y = y2
+                        kpt = None
+                        if has_kpts and idx_b < len(r.keypoints.data):
+                            kpt = r.keypoints.data[idx_b].cpu().numpy()
                         detections.append({
                             "bbox": [float(x1), float(y1), float(x2), float(y2)],
                             "confidence": conf,
-                            "foot_point": (float(foot_x), float(foot_y))
+                            "foot_point": (float(foot_x), float(foot_y)),
+                            "keypoints": kpt
                         })
 
             # 2. Multi-Target Tracking & Homography Projection
@@ -135,6 +147,8 @@ def run_cv_engine(
                 # Annotate perspective frame
                 x1, y1, x2, y2 = map(int, trk["bbox"])
                 box_color = (0, 0, 255) if is_breaching else (0, 230, 255)
+                if use_pose and trk.get("keypoints") is not None:
+                    draw_pose_skeleton(frame, trk["keypoints"])
                 cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
                 tag = f"#{trk['track_id']} | {speed_kmh:.1f} km/h"
                 cv2.putText(frame, tag, (x1, max(18, y1 - 8)),

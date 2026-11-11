@@ -24,14 +24,11 @@ def get_width_kwargs(stretch: bool = True):
 
 WIDTH_KWARGS = get_width_kwargs()
 
-import importlib
 from ultralytics import YOLO
-import cv_core.tracking.tracker
-importlib.reload(cv_core.tracking.tracker)
 from cv_core.geometry.homography import HomographyTransformer
 from cv_core.geometry.zones_3d import MetricZone3D
 from cv_core.tracking.tracker import MultiTargetTracker
-from cv_core.kinetics.pose_classifier import PoseKineticClassifier
+from cv_core.kinetics.pose_classifier import PoseKineticClassifier, draw_pose_skeleton
 from cv_core.visualizer.bev_radar import BEVRadarRenderer
 
 @st.cache_resource
@@ -46,29 +43,7 @@ def get_pose_detector():
 
 def draw_skeleton(frame: np.ndarray, keypoints: np.ndarray, conf_thresh: float = 0.35):
     """Renders 17-point COCO human pose skeleton overlay on the camera frame."""
-    if keypoints is None:
-        return
-    kpts = np.asarray(keypoints, dtype=np.float32)
-    if kpts.shape[0] < 17:
-        return
-
-    limbs = [
-        (5, 6), (5, 7), (7, 9), (6, 8), (8, 10),      # Shoulders and arms
-        (11, 12), (5, 11), (6, 12),                   # Torso
-        (11, 13), (13, 15), (12, 14), (14, 16)        # Hips and legs
-    ]
-    for p1, p2 in limbs:
-        pt1, pt2 = kpts[p1], kpts[p2]
-        c1 = pt1[2] if len(pt1) >= 3 else 1.0
-        c2 = pt2[2] if len(pt2) >= 3 else 1.0
-        if c1 >= conf_thresh and c2 >= conf_thresh:
-            cv2.line(frame, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])), (0, 255, 200), 2, cv2.LINE_AA)
-
-    for i in range(17):
-        pt = kpts[i]
-        c = pt[2] if len(pt) >= 3 else 1.0
-        if c >= conf_thresh:
-            cv2.circle(frame, (int(pt[0]), int(pt[1])), 3, (0, 165, 255), -1, cv2.LINE_AA)
+    return draw_pose_skeleton(frame, keypoints, conf_thresh=conf_thresh)
 
 def main():
     if st is None:

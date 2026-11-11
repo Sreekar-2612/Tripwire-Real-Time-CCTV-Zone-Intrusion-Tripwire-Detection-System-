@@ -1,6 +1,5 @@
 import argparse
 import sys
-import json
 from pathlib import Path
 
 # Ensure project root is in sys.path for direct script execution
@@ -35,7 +34,10 @@ class HomographyCalibratorCLI:
     def run(self, length_m: float = 6.0, width_m: float = 3.0):
         # Read source
         if self.source_path.isdigit():
-            cap = cv2.VideoCapture(int(self.source_path))
+            cap_id = int(self.source_path)
+            cap = cv2.VideoCapture(cap_id, cv2.CAP_DSHOW)
+            if not cap.isOpened():
+                cap = cv2.VideoCapture(cap_id)
             ret, self.frame = cap.read()
             cap.release()
         elif Path(self.source_path).suffix.lower() in [".jpg", ".png", ".jpeg"]:

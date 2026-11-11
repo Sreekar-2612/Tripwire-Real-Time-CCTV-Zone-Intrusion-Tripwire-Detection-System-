@@ -15,7 +15,7 @@ from cv_core.geometry.homography import HomographyTransformer
 from cv_core.geometry.zones_3d import MetricZone3D
 from cv_core.tracking.tracker import MultiTargetTracker
 from cv_core.visualizer.bev_radar import BEVRadarRenderer
-from cv_core.kinetics.pose_classifier import PoseKineticClassifier
+from cv_core.kinetics.pose_classifier import PoseKineticClassifier, draw_pose_skeleton
 
 class TripwireInteractiveDemo:
     """
@@ -39,7 +39,9 @@ class TripwireInteractiveDemo:
 
         # Load models
         print("Initializing YOLOv8 & CV Components...")
-        self.detector = YOLO("yolov8n.pt")
+        pose_model_path = Path("yolov8n-pose.pt")
+        self.use_pose = pose_model_path.exists()
+        self.detector = YOLO(str(pose_model_path)) if self.use_pose else YOLO("yolov8n.pt")
         self.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
         self.pose_classifier = PoseKineticClassifier()
         self.radar = BEVRadarRenderer(radar_size=480, world_extent_m=20.0, grid_step_m=2.0)
@@ -63,11 +65,19 @@ class TripwireInteractiveDemo:
 
     def _load_source(self, key: str):
         if self.cap is not None:
-            self.cap.release()
+            try:
+                self.cap.release()
+            except Exception:
+                pass
         self.current_video_key = key
-        src = self.videos.get(key, self.videos["1"])
-        cap_target = int(src) if src.isdigit() else src
-        self.cap = cv2.VideoCapture(cap_target)
+        src = self.videos.get(key, self.videos.get("1", "0"))
+        if str(src).isdigit():
+            cap_id = int(src)
+            self.cap = cv2.VideoCapture(cap_id, cv2.CAP_DSHOW)
+            if not self.cap.isOpened():
+                self.cap = cv2.VideoCapture(cap_id)
+        else:
+            self.cap = cv2.VideoCapture(src)
         self.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
         print(f"Loaded feed [{key}]: {src}")
 
@@ -92,7 +102,8 @@ class TripwireInteractiveDemo:
 
         last_frame = None
 
-        while True:
+        try:
+            while True:
             if not self.paused:
                 ret, frame = self.cap.read()
                 if not ret or frame is None:
@@ -127,17 +138,26 @@ class TripwireInteractiveDemo:
             detections = []
             for r in results:
                 if r.boxes is not None:
-                    for box in r.boxes:
+                    has_kpts = self.use_pose and getattr(r, "keypoints", None) is not None and len(r.keypoints.data) > 0
+                    for idx_b, box in enumerate(r.boxes):
                         x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                         conf = float(box.conf[0].cpu().numpy())
+                        kpt = None
+                        if has_kpts and idx_b < len(r.keypoints.data):
+                            kpt = r.keypoints.data[idx_b].cpu().numpy()
                         detections.append({
                             "bbox": [float(x1), float(y1), float(x2), float(y2)],
                             "confidence": conf,
-                            "foot_point": ((x1 + x2) / 2.0, float(y2))
+                            "foot_point": ((x1 + x2) / 2.0, float(y2)),
+                            "keypoints": kpt
                         })
 
             # 3. Kalman Tracker & Homography
-            active_tracks = self.tracker.update(detections, homography_transformer=self.transformer)
+            active_tracks = self.tracker.update(
+                detections,
+                homography_transformer=self.transformer,
+                pose_classifier=self.pose_classifier if self.use_pose else None
+            )
 
             # 4. Threat Kinetics & Dual-View Annotation
             radar_tracks = []
@@ -179,6 +199,8 @@ class TripwireInteractiveDemo:
                 # Perspective Bounding Box
                 x1, y1, x2, y2 = map(int, trk["bbox"])
                 box_color = (0, 0, 255) if is_breach else (0, 240, 255)
+                if self.use_pose and trk.get("keypoints") is not None:
+                    draw_pose_skeleton(frame, trk["keypoints"])
                 cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
                 cv2.circle(frame, (int(trk["foot_point"][0]), int(trk["foot_point"][1])), 5, (0, 0, 255), -1)
 
@@ -224,9 +246,13 @@ class TripwireInteractiveDemo:
                 cv2.imwrite(snap_path, dual_view)
                 print(f"✅ Saved snapshot to {snap_path}")
 
-        if self.cap:
-            self.cap.release()
-        cv2.destroyAllWindows()
+        finally:
+            if self.cap:
+                try:
+                    self.cap.release()
+                except Exception:
+                    pass
+            cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     demo = TripwireInteractiveDemo()

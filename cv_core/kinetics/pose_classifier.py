@@ -305,8 +305,15 @@ def draw_pose_skeleton(
 
     if kpts.ndim == 3 and kpts.shape[0] == 1:
         kpts = kpts[0]
+    elif kpts.ndim == 1:
+        if kpts.shape[0] == 51:
+            kpts = kpts.reshape((17, 3))
+        elif kpts.shape[0] == 34:
+            kpts = kpts.reshape((17, 2))
+        else:
+            return frame
 
-    if kpts.shape[0] < 17:
+    if kpts.ndim != 2 or kpts.shape[0] < 17 or kpts.shape[1] < 2:
         return frame
 
     has_conf = kpts.shape[1] >= 3

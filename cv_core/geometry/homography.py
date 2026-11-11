@@ -65,6 +65,8 @@ class HomographyTransformer:
         """
         if len(image_points) < 4 or len(world_points) < 4:
             raise ValueError(f"At least 4 point correspondences required, got {len(image_points)}")
+        if len(image_points) != len(world_points):
+            raise ValueError(f"Number of image points ({len(image_points)}) must match world points ({len(world_points)}).")
 
         src_pts = np.asarray(image_points, dtype=np.float32).reshape(-1, 1, 2)
         dst_pts = np.asarray(world_points, dtype=np.float32).reshape(-1, 1, 2)
@@ -162,7 +164,7 @@ class HomographyTransformer:
                     errors.append(dist)
             except Exception:
                 continue
-        return float(np.mean(errors)) if errors else 0.0
+        return float(np.sqrt(np.mean(np.square(errors)))) if errors else 0.0
 
     def compute_velocity(
         self,
@@ -245,10 +247,11 @@ class HomographyTransformer:
 
         h, w = image_shape[:2]
         x_min, y_min, x_max, y_max = self.world_bounds
+        step = float(grid_step_m) if (grid_step_m is not None and grid_step_m > 1e-3) else 2.0
         segments = []
 
         # X-lines (constant X, varying Y)
-        x_vals = np.arange(x_min, x_max + grid_step_m, grid_step_m)
+        x_vals = np.arange(x_min, x_max + step, step)
         for x in x_vals:
             try:
                 u1, v1 = self.world_to_image(x, y_min)
@@ -259,7 +262,7 @@ class HomographyTransformer:
                 continue
 
         # Y-lines (constant Y, varying X)
-        y_vals = np.arange(y_min, y_max + grid_step_m, grid_step_m)
+        y_vals = np.arange(y_min, y_max + step, step)
         for y in y_vals:
             try:
                 u1, v1 = self.world_to_image(x_min, y)

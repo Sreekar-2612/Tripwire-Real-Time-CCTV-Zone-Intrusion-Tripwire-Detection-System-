@@ -4,8 +4,6 @@ import numpy as np
 from shapely.geometry import Polygon, Point, LineString
 from shapely.validation import make_valid
 
-from cv_core.geometry.homography import HomographyTransformer
-
 logger = logging.getLogger("tripwire.cv.zones_3d")
 
 class MetricZone3D:

@@ -143,4 +143,65 @@ def test_draw_pose_skeleton_renders_without_error():
     # Ensure drawing modified pixels
     assert np.count_nonzero(annotated) > 0
 
+def test_draw_pose_skeleton_handles_flattened_1d_and_corrupt_inputs():
+    """Verify draw_pose_skeleton gracefully handles 1D arrays, corrupt shapes, and NaNs without crashing."""
+    from cv_core.kinetics.pose_classifier import draw_pose_skeleton
+    
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+    # 1. 1D array of 51 elements (17 keypoints x 3 [x, y, conf])
+    kpts_51 = np.ones(51, dtype=np.float32) * 150.0
+    out_51 = draw_pose_skeleton(frame.copy(), kpts_51)
+    assert out_51.shape == (480, 640, 3)
+
+    # 2. 1D array of 34 elements (17 keypoints x 2 [x, y])
+    kpts_34 = np.ones(34, dtype=np.float32) * 200.0
+    out_34 = draw_pose_skeleton(frame.copy(), kpts_34)
+    assert out_34.shape == (480, 640, 3)
+
+    # 3. Invalid length / corrupt shape
+    out_invalid = draw_pose_skeleton(frame.copy(), np.ones(10, dtype=np.float32))
+    assert out_invalid.shape == (480, 640, 3)
+
+    # 4. NaNs and Infs in coordinates
+    kpts_nan = np.zeros((17, 3), dtype=np.float32)
+    kpts_nan[0] = [np.nan, 100.0, 0.9]
+    kpts_nan[1] = [100.0, np.inf, 0.9]
+    kpts_nan[2] = [200.0, 200.0, 0.9]
+    out_nan = draw_pose_skeleton(frame.copy(), kpts_nan)
+    assert out_nan.shape == (480, 640, 3)
+
+def test_extract_and_classify_yolo_pose(classifier):
+    """Verify extract_and_classify_yolo_pose correctly interfaces with YOLO-Pose results."""
+    from cv_core.kinetics.pose_classifier import extract_and_classify_yolo_pose
+    import torch
+
+    class MockKeypoints:
+        def __init__(self, tensor):
+            self.data = tensor
+
+    class MockYOLOResult:
+        def __init__(self, keypoints):
+            self.keypoints = keypoints
+
+    # 2 people detected
+    kpts_tensor = torch.zeros((2, 17, 3), dtype=torch.float32)
+    # Person 0: Climbing
+    kpts_tensor[0, :, 2] = 0.95
+    kpts_tensor[0, PoseKineticClassifier.NOSE] = torch.tensor([100.0, 100.0, 0.95])
+    kpts_tensor[0, PoseKineticClassifier.LEFT_SHOULDER] = torch.tensor([80.0, 130.0, 0.95])
+    kpts_tensor[0, PoseKineticClassifier.RIGHT_SHOULDER] = torch.tensor([120.0, 130.0, 0.95])
+    kpts_tensor[0, PoseKineticClassifier.LEFT_WRIST] = torch.tensor([70.0, 70.0, 0.95])
+    kpts_tensor[0, PoseKineticClassifier.RIGHT_WRIST] = torch.tensor([130.0, 70.0, 0.95])
+    kpts_tensor[0, PoseKineticClassifier.LEFT_HIP] = torch.tensor([85.0, 250.0, 0.95])
+    kpts_tensor[0, PoseKineticClassifier.RIGHT_HIP] = torch.tensor([115.0, 250.0, 0.95])
+
+    # Person 1: Insufficient keypoints (zeros)
+    mock_res = MockYOLOResult(MockKeypoints(kpts_tensor))
+    results = extract_and_classify_yolo_pose(mock_res, speed_mps_list=[0.2, 0.0], perimeter_flags=[True, False])
+
+    assert len(results) == 2
+    assert results[0]["posture"] == PostureType.CLIMBING.value
+    assert results[1]["posture"] == PostureType.UNKNOWN.value
+
 
