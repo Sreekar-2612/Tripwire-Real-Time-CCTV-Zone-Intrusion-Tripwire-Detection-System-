@@ -86,6 +86,7 @@ class MetricZone3D:
         """
         Calculates directional tripwire crossing in metric ground space.
         Returns 'CROSS_IN', 'CROSS_OUT', or None.
+
         """
         if self.line is None or prev_world_pt is None or curr_world_pt is None:
             return None
@@ -117,6 +118,7 @@ class MetricZone3D:
         cp_curr = cross_product(curr_world_pt)
 
         eps = 1e-5
+        # Both strictly on opposite sides — normal crossing
         if cp_prev > eps and cp_curr < -eps:
             return "CROSS_IN"
         elif cp_prev < -eps and cp_curr > eps:

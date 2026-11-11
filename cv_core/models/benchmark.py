@@ -8,8 +8,12 @@ logger = logging.getLogger("tripwire.cv.benchmark")
 
 class InferenceProfiler:
     """
-    Inference latency & throughput profiler for computer vision models.
-    Isolates Preprocessing, Neural Network Forward Pass, and NMS Postprocessing.
+    Synthetic latency microbenchmark for CV preprocessing and tensor operations.
+
+    Fix #17: This profiler measures preprocessing (transpose/normalise) and
+    generic tensor kernel throughput on SYNTHETIC frames.  It does NOT run
+    YOLO or any other neural detector.  Results cannot be compared with
+    real-inference FPS reported elsewhere in the project.  Use actual video processing timings for representative throughput numbers.
     """
     def __init__(self, warmup_runs: int = 5, test_runs: int = 20):
         self.warmup_runs = warmup_runs
@@ -21,10 +25,12 @@ class InferenceProfiler:
         batch_size: int = 1
     ) -> Dict[str, Any]:
         """
-        Profiles standard CV pipeline stages on synthetic frame buffers:
-        1. Preprocess: Resize, BGR2RGB, transpose HWC -> CHW, FP32 normalize.
-        2. Dummy Compute / Kernel Execution.
-        3. Postprocess: Synthetic box decode and threshold filtering.
+        Microbenchmarks standard CV preprocessing stages on a synthetic frame:
+        1. Preprocess: Transpose HWC -> CHW and FP32 normalise.
+        2. Tensor Ops: sin+cos kernel (synthetic placeholder — NOT neural inference).
+        3. Postprocess: Threshold filtering on random boxes (NOT real NMS).
+
+        NOTE: Stage 2 timings are NOT neural-network forward-pass timings.
         """
         dummy_frame = np.random.randint(0, 256, (imgsz, imgsz, 3), dtype=np.uint8)
 
@@ -95,8 +101,8 @@ class InferenceProfiler:
         return (
             "| Stage | Latency (Mean) | Description |\n"
             "| :--- | :---: | :--- |\n"
-            f"| **Preprocessing** | `{stats['preprocess_mean_ms']} ms` | BGR2RGB, transpose HWC->CHW, float32 scaling |\n"
-            f"| **Inference Kernel** | `{stats['compute_mean_ms']} ms` | Forward-pass neural matrix computation |\n"
-            f"| **Postprocessing / NMS** | `{stats['postprocess_mean_ms']} ms` | Bounding-box thresholding & suppression |\n"
-            f"| **End-to-End Pipeline** | `{stats['total_latency_mean_ms']} ms` | **Throughput: {stats['fps']} FPS** (p95: {stats['total_latency_p95_ms']} ms) |\n"
+            f"| **Preprocessing** | `{stats['preprocess_mean_ms']} ms` | Transpose HWC->CHW, float32 scaling (synthetic input) |\n"
+            f"| **Synthetic Tensor Operations** | `{stats['compute_mean_ms']} ms` | sin + cos, not neural inference |\n"
+            f"| **Random Box Filtering** | `{stats['postprocess_mean_ms']} ms` | Random score thresholding, not NMS |\n"
+            f"| **Synthetic Pipeline** | `{stats['total_latency_mean_ms']} ms` | **Synthetic throughput: {stats['fps']} FPS** (p95: {stats['total_latency_p95_ms']} ms) |\n"
         )

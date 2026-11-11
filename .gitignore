@@ -7,20 +7,35 @@ __pycache__/
 .venv/
 venv/
 ENV/
+.audit_deps/
+.audit_runtime/
 *.pt
 
 # Video artifacts & logs
 data/videos/uploaded_*
+data/videos/upload_*
 data/videos/temp_uploaded.mp4
+data/snapshot_*.jpg
+/result.mp4
+audit/*.mp4
+audit/*.jpg
+audit/*.png
 *.log
 runs/
 
 # Testing & Cache
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
+audit/*.xml
+!audit/full_tests.xml
+!audit/regressions.xml
+!audit/verification_final.xml
 
 # Environment & OS
 .env
+.env.*
+!.env.example
 .DS_Store
 Thumbs.db

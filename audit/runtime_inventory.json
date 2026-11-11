@@ -1,0 +1,52 @@
+{
+  "parsed_python_files": 23,
+  "videos": {
+    "cctv_sample.mp4": {
+      "fps": 25.0,
+      "width": 640.0,
+      "height": 480.0,
+      "reported_frames": 250.0,
+      "decoded_frames": 250
+    },
+    "corridor_tripwire_breach.mp4": {
+      "fps": 12.0,
+      "width": 768.0,
+      "height": 432.0,
+      "reported_frames": 120.0,
+      "decoded_frames": 120
+    },
+    "high_speed_fleeing_breach.mp4": {
+      "fps": 18.0,
+      "width": 768.0,
+      "height": 432.0,
+      "reported_frames": 60.0,
+      "decoded_frames": 60
+    },
+    "solutions_ci_demo.mp4": {
+      "fps": 30.0,
+      "width": 640.0,
+      "height": 360.0,
+      "reported_frames": 62.0,
+      "decoded_frames": 62
+    },
+    "walking_cctv.mp4": {
+      "fps": 12.0,
+      "width": 768.0,
+      "height": 432.0,
+      "reported_frames": 732.0,
+      "decoded_frames": 732
+    }
+  },
+  "versions": {
+    "numpy": "2.2.6",
+    "opencv-python": "4.12.0.88",
+    "scipy": "1.18.1",
+    "torch": "2.7.1",
+    "ultralytics": "8.3.156",
+    "streamlit": "1.48.0",
+    "fastapi": "0.162.0",
+    "uvicorn": "0.30.6",
+    "pandas": "2.3.3",
+    "shapely": "2.2.0"
+  }
+}

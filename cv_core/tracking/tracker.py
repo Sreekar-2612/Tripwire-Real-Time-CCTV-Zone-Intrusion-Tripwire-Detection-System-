@@ -111,6 +111,7 @@ def linear_assignment_iou(
     cost_matrix = 1.0 - diou_matrix
     cost_matrix = np.nan_to_num(cost_matrix, nan=2.0, posinf=2.0, neginf=2.0)
 
+    cost_matrix[iou_matrix < iou_thresh] = 2 * (len(tracks) + len(detections) + 1)
     row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
     matches: List[Tuple[int, int]] = []
@@ -174,6 +175,10 @@ class SingleTrack:
         self.hits = 1
         self.age = 1
         self.time_since_update = 0
+        # Fix #8: track whether this track was ever confirmed so recovery
+        # from LOST correctly skips re-confirmation threshold.
+        self._ever_confirmed: bool = False
+        self._world_elapsed = 0.0
 
         # Motion trail history
         self.trail: List[Tuple[int, int]] = [(int(self.foot_point[0]), int(self.foot_point[1]))]
@@ -193,7 +198,8 @@ class SingleTrack:
         # Pose & Kinetic Attributes
         self.keypoints: Optional[np.ndarray] = None
         self.posture: str = "standing"
-        self.posture_history: List[str] = [self.posture]
+        self.posture_history: List[str] = []  # Fix #9: do NOT seed with invented initial value
+        self._pose_history = []
         self.threat_level: int = 1
         self.pose_indicators: List[str] = []
 
@@ -201,10 +207,12 @@ class SingleTrack:
         self.kf = KalmanFilter2D(dt=self.dt, process_noise_std=0.8, measurement_noise_std=0.3)
         self.kf.initialize(self.foot_point[0], self.foot_point[1])
 
-    def predict(self):
+    def predict(self, elapsed_dt=None):
         """Advances Kalman filter estimate."""
         old_x, old_y = self.foot_point
-        pred_x, pred_y = self.kf.predict()
+        interval = self.dt if elapsed_dt is None else elapsed_dt
+        pred_x, pred_y = self.kf.predict(interval)
+        self._world_elapsed += interval
         self.foot_point = (pred_x, pred_y)
 
         # Shift bounding box by Kalman displacement to maintain IoU overlap
@@ -223,22 +231,34 @@ class SingleTrack:
         foot_point: Tuple[float, float],
         world_pt: Optional[Tuple[float, float]] = None,
         keypoints: Optional[np.ndarray] = None,
-        posture_info: Optional[Dict[str, Any]] = None
+        posture_info: Optional[Dict[str, Any]] = None,
+        elapsed_dt: Optional[float] = None
     ):
-        """Incorporates new matched detection with EMA velocity smoothing."""
+        """Incorporates new matched detection with EMA velocity smoothing.
+
+        elapsed_dt: actual wall-clock or source-time seconds since the previous
+        observation for this track.  When supplied it is used for speed calculation
+        instead of the fixed frame-rate dt, which fixes the speed-spike-on-recovery
+        defect (#3) and the FPS-mismatch defect (#2).
+        """
         if bbox is not None and len(bbox) >= 4:
             self.bbox = [float(b) if np.isfinite(b) else self.bbox[i] for i, b in enumerate(bbox[:4])]
-        
+
         conf = float(confidence) if np.isfinite(confidence) else self.confidence
         self.confidence = max(0.0, min(1.0, conf))
 
         fx = float(foot_point[0]) if (foot_point is not None and len(foot_point) >= 2 and np.isfinite(foot_point[0])) else self.foot_point[0]
         fy = float(foot_point[1]) if (foot_point is not None and len(foot_point) >= 2 and np.isfinite(foot_point[1])) else self.foot_point[1]
-        
+
         self.kf.update(fx, fy)
         self.foot_point = self.kf.position
 
         self.hits += 1
+        # Fix #3: record the time_since_update BEFORE resetting so we know how
+        # many frame intervals elapsed since the last observation.
+        # Since predict() increments time_since_update by 1 each step,
+        # self.time_since_update is 1 for consecutive frames, and >1 after missed frames.
+        frames_elapsed = max(1, self.time_since_update)
         self.time_since_update = 0
 
         # Update pixel trail
@@ -270,6 +290,9 @@ class SingleTrack:
         if world_pt is not None and len(world_pt) >= 2 and np.isfinite(world_pt[0]) and np.isfinite(world_pt[1]):
             clean_world_pt = (float(world_pt[0]), float(world_pt[1]))
             self.world_pos = clean_world_pt
+            # Fix #2 & #3: store (x, y, timestamp_or_frame_elapsed) so we can
+            # divide displacement by the actual elapsed time between observations,
+            # not a fixed 1-frame interval.  elapsed_dt is passed in from update().
             self.world_trail.append(clean_world_pt)
             if len(self.world_trail) > 40:
                 self.world_trail.pop(0)
@@ -277,9 +300,16 @@ class SingleTrack:
             if len(self.world_trail) >= 2:
                 p1 = self.world_trail[-2]
                 p2 = self.world_trail[-1]
-                step_dt = getattr(self, "dt", 1.0 / 25.0)
-                if step_dt is None or not np.isfinite(step_dt) or step_dt <= 1e-4:
-                    step_dt = 1.0 / 25.0
+                # Fix #2 & #3: use elapsed_dt when supplied; otherwise fall back
+                # to dt * frames_elapsed so occlusions don't spike speed.
+                if self._world_elapsed > 0:
+                    step_dt = self._world_elapsed
+                elif elapsed_dt is not None and np.isfinite(elapsed_dt) and elapsed_dt > 1e-4:
+                    step_dt = float(elapsed_dt)
+                else:
+                    step_dt = getattr(self, "dt", 1.0 / 25.0) * frames_elapsed
+                    if step_dt is None or not np.isfinite(step_dt) or step_dt <= 1e-4:
+                        step_dt = 1.0 / 25.0
 
                 raw_vx = (p2[0] - p1[0]) / step_dt
                 raw_vy = (p2[1] - p1[1]) / step_dt
@@ -313,26 +343,43 @@ class SingleTrack:
                 else:
                     self.metric_speed = min(35.0, spd if np.isfinite(spd) else 0.0)
 
+            self._world_elapsed = 0.0
+
         # Update pose attributes with temporal majority smoothing
         if keypoints is not None:
             self.keypoints = np.asarray(keypoints, dtype=np.float32)
         if posture_info is not None:
+            self._pose_history.append(dict(posture_info))
+            self._pose_history = self._pose_history[-6:]
             raw_p = posture_info.get("posture", self.posture)
             self.posture_history.append(raw_p)
             if len(self.posture_history) > 6:
                 self.posture_history.pop(0)
 
-            # High threat postures (climbing, crawling, fallen) take priority if observed in >= 2 frames
+            # Fix #9: derive both posture and threat from the same winning state.
+            # High threat postures (climbing, crawling, fallen) take priority if
+            # observed in >= 2 frames.  Tie-breaking: prefer the most recently
+            # observed posture among equally frequent ones (last-wins, stable).
+            from collections import Counter
             threats = [p for p in self.posture_history if p in ("climbing", "crawling", "fallen")]
             if len(threats) >= 2:
-                from collections import Counter
-                self.posture = Counter(threats).most_common(1)[0][0]
+                cnt = Counter(threats)
+                top_count = cnt.most_common(1)[0][1]
+                # Among equally frequent threat postures pick the most recent
+                candidates = [p for p in reversed(self.posture_history) if cnt.get(p, 0) == top_count and p in cnt]
+                self.posture = candidates[0] if candidates else cnt.most_common(1)[0][0]
             else:
-                from collections import Counter
-                self.posture = Counter(self.posture_history).most_common(1)[0][0]
+                cnt = Counter(self.posture_history)
+                top_count = cnt.most_common(1)[0][1]
+                # Among equally frequent postures pick the most recently observed
+                candidates = [p for p in reversed(self.posture_history) if cnt.get(p, 0) == top_count]
+                self.posture = candidates[0] if candidates else cnt.most_common(1)[0][0]
 
-            self.threat_level = posture_info.get("threat_level", self.threat_level)
-            self.pose_indicators = posture_info.get("indicators", self.pose_indicators)
+            # Fix #9: derive threat_level from the winning (smoothed) posture, not
+            # from the raw classification that may differ from the displayed label.
+            selected = next(p for p in reversed(self._pose_history) if p.get('posture') == self.posture)
+            self.threat_level = selected.get('threat_level', 1)
+            self.pose_indicators = selected.get('indicators', [])
 
     @property
     def velocity(self) -> Tuple[float, float]:
@@ -380,7 +427,9 @@ class MultiTargetTracker:
         trk: SingleTrack,
         det: Dict[str, Any],
         homography_transformer=None,
-        pose_classifier=None
+        pose_classifier=None,
+        zones=None,
+        elapsed_dt: Optional[float] = None
     ):
         """Helper to transform coordinates and incorporate detection into a track with ankle ground refinement."""
         foot_pt = det.get("foot_point", (0.0, 0.0))
@@ -419,15 +468,46 @@ class MultiTargetTracker:
         if posture_info is None and keypoints is not None:
             # Classify posture via pose_classifier or standalone helper
             speed_mps = (trk.metric_speed / 3.6) if trk.world_pos is not None else 0.0
+            # Fix #5: compute is_near_perimeter from configured zones and world position.
+            # Missing perimeter geometry cannot establish proximity.
+            if det.get("is_near_perimeter") is not None:
+                is_near_perimeter = bool(det["is_near_perimeter"])
+            elif zones is None:
+                is_near_perimeter = False
+            elif world_pt is not None:
+                is_near_perimeter = False
+                wx, wy = world_pt
+                from shapely.geometry import Point
+                for z in zones:
+                    if not z.armed:
+                        continue
+                    if z.zone_type == "tripwire" and z.line is not None:
+                        try:
+                            dist = z.line.distance(Point(wx, wy))
+                            if dist < 2.0:  # within 2 metres of a tripwire
+                                is_near_perimeter = True
+                                break
+                        except Exception:
+                            pass
+                    elif z.zone_type != "tripwire" and z.polygon is not None:
+                        try:
+                            dist = z.polygon.boundary.distance(Point(wx, wy))
+                            if dist < 1.5:
+                                is_near_perimeter = True
+                                break
+                        except Exception:
+                            pass
+            else:
+                is_near_perimeter = False
             if pose_classifier is not None:
                 try:
-                    posture_info = pose_classifier.classify_pose(keypoints, speed_mps=speed_mps)
+                    posture_info = pose_classifier.classify_pose(keypoints, speed_mps=speed_mps, is_near_perimeter=is_near_perimeter)
                 except Exception:
                     posture_info = None
             else:
                 try:
                     from cv_core.kinetics.pose_classifier import classify_keypoints_posture
-                    posture_info = classify_keypoints_posture(keypoints, speed_mps=speed_mps)
+                    posture_info = classify_keypoints_posture(keypoints, speed_mps=speed_mps, is_near_perimeter=is_near_perimeter)
                 except Exception:
                     posture_info = None
 
@@ -437,14 +517,17 @@ class MultiTargetTracker:
             foot_point=foot_pt,
             world_pt=world_pt,
             keypoints=keypoints,
-            posture_info=posture_info
+            posture_info=posture_info,
+            elapsed_dt=elapsed_dt
         )
 
     def update(
         self,
         detections: Optional[List[Dict[str, Any]]] = None,
         homography_transformer=None,
-        pose_classifier=None
+        pose_classifier=None,
+        zones=None,
+        elapsed_dt: Optional[float] = None
     ) -> List[Dict[str, Any]]:
         """
         ByteTrack Two-Stage Association Update:
@@ -453,7 +536,12 @@ class MultiTargetTracker:
                 'confidence': float
                 'foot_point': (foot_x, foot_y)
                 'keypoints': Optional (17, 2) or (17, 3) keypoint array
+            zones: Optional list of MetricZone3D used for is_near_perimeter (fix #5).
+            elapsed_dt: Actual seconds since the last call. When supplied it is
+                used for speed calculation instead of a fixed dt (fix #2).
         """
+        if elapsed_dt is not None and (not np.isfinite(elapsed_dt) or elapsed_dt <= 0):
+            raise ValueError('Frame interval must be finite and positive')
         if detections is None:
             detections = []
 
@@ -491,13 +579,15 @@ class MultiTargetTracker:
                 clean_d["keypoints"] = det["keypoints"]
             if "posture_info" in det:
                 clean_d["posture_info"] = det["posture_info"]
+            if 'is_near_perimeter' in det:
+                clean_d['is_near_perimeter'] = bool(det['is_near_perimeter'])
             cleaned_detections.append(clean_d)
 
         detections = cleaned_detections
 
         # 1. Predict new locations of all existing tracks
         for trk in self.tracks:
-            trk.predict()
+            trk.predict(elapsed_dt)
 
         # 2. Partition detections into High-Confidence and Low-Confidence bands
         high_dets: List[Dict[str, Any]] = []
@@ -524,7 +614,9 @@ class MultiTargetTracker:
             self._update_single_track(
                 confirmed_tracks[r], high_dets[c],
                 homography_transformer=homography_transformer,
-                pose_classifier=pose_classifier
+                pose_classifier=pose_classifier,
+                zones=zones,
+                elapsed_dt=elapsed_dt
             )
 
         # Match remaining high-confidence detections with unconfirmed (tentative) tracks
@@ -536,7 +628,9 @@ class MultiTargetTracker:
             self._update_single_track(
                 unconfirmed_tracks[r], rem_high_dets[c],
                 homography_transformer=homography_transformer,
-                pose_classifier=pose_classifier
+                pose_classifier=pose_classifier,
+                zones=zones,
+                elapsed_dt=elapsed_dt
             )
 
         # Match still remaining high-confidence detections with lost tracks (recovering lost targets)
@@ -548,7 +642,9 @@ class MultiTargetTracker:
             self._update_single_track(
                 lost_tracks[r], lost_candidates_high[c],
                 homography_transformer=homography_transformer,
-                pose_classifier=pose_classifier
+                pose_classifier=pose_classifier,
+                zones=zones,
+                elapsed_dt=elapsed_dt
             )
 
         # =========================================================================
@@ -570,7 +666,9 @@ class MultiTargetTracker:
             self._update_single_track(
                 remaining_tracks_stage2[r], low_dets[c],
                 homography_transformer=homography_transformer,
-                pose_classifier=pose_classifier
+                pose_classifier=pose_classifier,
+                zones=zones,
+                elapsed_dt=elapsed_dt
             )
         # Note: Unmatched low-confidence detections are discarded to prevent false positive tracks.
 
@@ -625,8 +723,15 @@ class MultiTargetTracker:
             if trk.time_since_update == 0:
                 if trk.state == TrackState.TENTATIVE and trk.hits >= self.min_hits:
                     trk.state = TrackState.CONFIRMED
+                    trk._ever_confirmed = True
                 elif trk.state == TrackState.LOST:
-                    trk.state = TrackState.CONFIRMED
+                    # Fix #8: a previously-confirmed track may recover directly;
+                    # a track that was never confirmed must still meet min_hits.
+                    if trk._ever_confirmed or trk.hits >= self.min_hits:
+                        trk.state = TrackState.CONFIRMED
+                        trk._ever_confirmed = True
+                    else:
+                        trk.state = TrackState.TENTATIVE
 
             # Check track loss/deletion
             if trk.time_since_update > self.max_age:
@@ -637,12 +742,12 @@ class MultiTargetTracker:
             if trk.state != TrackState.DELETED:
                 active_tracks.append(trk)
 
-            # Output only confirmed tracks (or active tentative if fresh)
-            if trk.state == TrackState.CONFIRMED or (trk.state == TrackState.TENTATIVE and trk.hits >= 2):
+            # Fix #8: output condition uses configured min_hits instead of hardcoded 2
+            if trk.state == TrackState.CONFIRMED or (trk.state == TrackState.TENTATIVE and trk.hits >= self.min_hits):
                 vx, vy = (trk.metric_vx, trk.metric_vy) if trk.world_pos is not None else trk.velocity
                 if not (np.isfinite(vx) and np.isfinite(vy)):
                     vx, vy = 0.0, 0.0
-                speed_kmh = trk.metric_speed if trk.world_pos is not None else float(trk.speed * 3.6)
+                speed_kmh = trk.metric_speed if trk.world_pos is not None else 0.0
                 if not np.isfinite(speed_kmh) or speed_kmh < 0.8:
                     speed_kmh = 0.0
                 track_info: Dict[str, Any] = {

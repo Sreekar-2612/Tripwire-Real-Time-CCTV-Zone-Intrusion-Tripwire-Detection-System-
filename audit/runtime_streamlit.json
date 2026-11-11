@@ -1,0 +1,6 @@
+{
+  "initial_render": "pass",
+  "start_real_inference_8_frames": "pass",
+  "disconnect_stops_feed": true,
+  "stop_button": "pass"
+}

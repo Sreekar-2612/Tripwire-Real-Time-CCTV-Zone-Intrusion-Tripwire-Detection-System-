@@ -1,14 +1,21 @@
 {
+  "method": "Isolated components; synthetic tracking/geometry inputs; not application throughput or labeled accuracy",
+  "environment": {
+    "python": "3.13.4",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "torch": "2.7.1+cpu",
+    "opencv": "4.13.0"
+  },
   "bev_caching": {
     "runs": 300,
-    "baseline_mean_ms": 6.989,
-    "baseline_p95_ms": 8.403,
-    "baseline_fps": 143.1,
-    "optimized_mean_ms": 2.674,
-    "optimized_p95_ms": 3.354,
-    "optimized_fps": 374.0,
-    "speedup_factor": 2.61,
-    "latency_reduction_pct": 61.7,
+    "baseline_mean_ms": 2.165,
+    "baseline_p95_ms": 2.684,
+    "baseline_fps": 461.9,
+    "optimized_mean_ms": 0.737,
+    "optimized_p95_ms": 1.018,
+    "optimized_fps": 1356.3,
+    "speedup_factor": 2.94,
+    "latency_reduction_pct": 65.9,
     "visual_fidelity_mse": 0.0
   },
   "diou_matching": {
@@ -39,21 +46,21 @@
         "iou_overlap": 0.0,
         "diou_affinity": -0.125,
         "iou_matched": false,
-        "diou_matched": true
+        "diou_matched": false
       },
       {
         "displacement_px": 50.0,
         "iou_overlap": 0.0,
         "diou_affinity": -0.172,
         "iou_matched": false,
-        "diou_matched": true
+        "diou_matched": false
       },
       {
         "displacement_px": 60.0,
         "iou_overlap": 0.0,
         "diou_affinity": -0.22,
         "iou_matched": false,
-        "diou_matched": true
+        "diou_matched": false
       },
       {
         "displacement_px": 70.0,
@@ -70,9 +77,41 @@
         "diou_matched": false
       }
     ],
-    "max_tolerated_displacement_iou_px": 35.0,
-    "max_tolerated_displacement_diou_px": 80.0,
-    "diou_tracking_retention": "100% ID Preservation over high-speed frame leaps"
+    "max_tolerated_displacement_iou_px": 30.0,
+    "max_tolerated_displacement_diou_px": 30.0,
+    "diou_tracking_retention": false,
+    "track_history": [
+      [
+        1
+      ],
+      [
+        1
+      ],
+      [
+        1
+      ],
+      [
+        1
+      ],
+      [
+        1
+      ],
+      [
+        2
+      ],
+      [
+        2
+      ],
+      [
+        2
+      ],
+      [
+        2
+      ],
+      [
+        2
+      ]
+    ]
   },
   "ankle_ground_contact": {
     "frames_evaluated": 50,
@@ -93,15 +132,15 @@
     "flicker_reduction_pct": 92.6
   },
   "pipeline_latency": {
-    "yolo_inference_mean_ms": 163.11,
-    "yolo_inference_p95_ms": 186.7,
-    "tracker_diou_mean_ms": 2.287,
-    "tracker_diou_p95_ms": 2.725,
-    "homography_projection_mean_ms": 0.353,
-    "homography_projection_p95_ms": 0.384,
-    "bev_cached_render_mean_ms": 1.737,
-    "bev_cached_render_p95_ms": 2.019,
-    "total_pipeline_mean_ms": 167.49,
-    "total_fps": 6.0
+    "yolo_inference_mean_ms": 98.16,
+    "yolo_inference_p95_ms": 127.65,
+    "tracker_diou_mean_ms": 0.59,
+    "tracker_diou_p95_ms": 0.705,
+    "homography_projection_mean_ms": 0.044,
+    "homography_projection_p95_ms": 0.048,
+    "bev_cached_render_mean_ms": 0.433,
+    "bev_cached_render_p95_ms": 0.466,
+    "total_pipeline_mean_ms": 99.23,
+    "total_fps": 10.1
   }
 }

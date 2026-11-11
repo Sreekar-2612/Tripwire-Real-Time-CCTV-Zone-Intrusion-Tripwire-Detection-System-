@@ -59,30 +59,34 @@ class MOTEvaluator:
             matched_pred = set()
             matched_gt = set()
 
-            # Greedy bipartite matching per frame
-            for g_idx, gt in enumerate(gt_boxes):
-                best_iou = 0.0
-                best_p_idx = -1
-                for p_idx, pred in enumerate(pred_boxes):
-                    if p_idx in matched_pred:
-                        continue
-                    iou = self.calculate_box_iou(gt["bbox"], pred["bbox"])
-                    if iou > best_iou:
-                        best_iou = iou
-                        best_p_idx = p_idx
+            # Fix #16: use optimal global Hungarian assignment per frame instead of
+            # greedy per-GT-row iteration, which produces order-dependent results.
+            if gt_boxes and pred_boxes:
+                n_gt = len(gt_boxes)
+                n_pred = len(pred_boxes)
+                iou_mat = np.zeros((n_gt, n_pred), dtype=np.float32)
+                for gi, gt in enumerate(gt_boxes):
+                    for pi, pred in enumerate(pred_boxes):
+                        iou_mat[gi, pi] = self.calculate_box_iou(gt["bbox"], pred["bbox"])
 
-                if best_iou >= self.iou_threshold and best_p_idx >= 0:
-                    matched_gt.add(g_idx)
-                    matched_pred.add(best_p_idx)
-                    total_tp += 1
-                    iou_sum += best_iou
+                from scipy.optimize import linear_sum_assignment as _lsa
+                cost = np.where(iou_mat >= self.iou_threshold, -iou_mat, n_gt + n_pred + 1)
+                row_ind, col_ind = _lsa(cost)
 
-                    pred_tid = pred_boxes[best_p_idx]["track_id"]
-                    gt_tid = gt["track_id"]
+                matched_pred = set()
+                for gi, pi in zip(row_ind, col_ind):
+                    if iou_mat[gi, pi] >= self.iou_threshold:
+                        matched_gt.add(gi)
+                        matched_pred.add(pi)
+                        total_tp += 1
+                        iou_sum += iou_mat[gi, pi]
 
-                    if gt_tid in active_associations and active_associations[gt_tid] != pred_tid:
-                        total_idsw += 1
-                    active_associations[gt_tid] = pred_tid
+                        pred_tid = pred_boxes[pi]["track_id"]
+                        gt_tid = gt_boxes[gi]["track_id"]
+
+                        if gt_tid in active_associations and active_associations[gt_tid] != pred_tid:
+                            total_idsw += 1
+                        active_associations[gt_tid] = pred_tid
 
             # Unmatched GT = False Negatives
             total_fn += (len(gt_boxes) - len(matched_gt))
