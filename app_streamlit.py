@@ -1,5 +1,6 @@
 import time
 import json
+import inspect
 from pathlib import Path
 import cv2
 import numpy as np
@@ -11,6 +12,17 @@ try:
     import streamlit as st
 except ImportError:
     st = None
+
+def get_width_kwargs(stretch: bool = True):
+    """Provides version-compatible kwargs across Streamlit versions (width='stretch' vs use_container_width=True)."""
+    try:
+        if st is not None and "width" in inspect.signature(st.button).parameters:
+            return {"width": "stretch" if stretch else "content"}
+    except Exception:
+        pass
+    return {"use_container_width": stretch}
+
+WIDTH_KWARGS = get_width_kwargs()
 
 import importlib
 from ultralytics import YOLO
@@ -196,11 +208,11 @@ def main():
     st.sidebar.markdown("---")
     col_btn1, col_btn2 = st.sidebar.columns(2)
     with col_btn1:
-        if st.button("▶️ Start Live", type="primary", use_container_width=True):
+        if st.button("▶️ Start Live", type="primary", key="btn_start_live", **WIDTH_KWARGS):
             st.session_state.is_running = True
             st.rerun()
     with col_btn2:
-        if st.button("⏹️ Stop Feed", use_container_width=True):
+        if st.button("⏹️ Stop Feed", key="btn_stop_feed", **WIDTH_KWARGS):
             st.session_state.is_running = False
             if st.session_state.cap is not None:
                 try:
@@ -210,6 +222,15 @@ def main():
                 st.session_state.cap = None
             st.session_state.current_feed = None
             st.rerun()
+
+    if st.session_state.incident_log:
+        st.sidebar.markdown("---")
+        with st.sidebar.expander(f"📥 Export Incident Logs ({len(st.session_state.incident_log)})", expanded=False):
+            df_sb = pd.DataFrame(st.session_state.incident_log[::-1])
+            csv_sb = df_sb.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Download CSV", csv_sb, "tripwire_incident_audit.csv", "text/csv", key="sb_download_csv", **WIDTH_KWARGS)
+            json_sb = json.dumps(st.session_state.incident_log, indent=2).encode('utf-8')
+            st.download_button("📥 Download JSON", json_sb, "tripwire_forensic_report.json", "application/json", key="sb_download_json", **WIDTH_KWARGS)
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("**CV Algorithms Active:**")
@@ -257,12 +278,22 @@ def main():
             if isinstance(video_path, int):
                 cap = cv2.VideoCapture(video_path, cv2.CAP_DSHOW)
                 if not cap.isOpened():
+                    cap = cv2.VideoCapture(video_path, cv2.CAP_MSMF)
+                if not cap.isOpened():
                     cap = cv2.VideoCapture(video_path)
             else:
                 cap = cv2.VideoCapture(video_path)
 
             if not cap.isOpened():
-                status_text.error(f"❌ Could not open video source or camera ({video_path}). Please verify camera is connected and not locked by another application.")
+                if isinstance(video_path, int):
+                    status_text.error(
+                        f"❌ Could not access webcam device index #{video_path}.\n\n"
+                        "• Ensure camera is connected and recognized in Windows Device Manager.\n"
+                        "• Check Windows Settings > Privacy & security > Camera to ensure apps can access your camera.\n"
+                        "• Ensure another application (Zoom, Teams, Discord, Chrome) is not currently locking the webcam."
+                    )
+                else:
+                    status_text.error(f"❌ Could not open video file ({video_path}). Please verify the file exists.")
                 st.session_state.is_running = False
                 return
 
@@ -548,7 +579,7 @@ def main():
 
             dual_view_resized = cv2.resize(dual_view, (1280, 480), interpolation=cv2.INTER_AREA)
             dual_view_rgb = cv2.cvtColor(dual_view_resized, cv2.COLOR_BGR2RGB)
-            dual_view_placeholder.image(dual_view_rgb, channels="RGB", use_container_width=True)
+            dual_view_placeholder.image(dual_view_rgb, channels="RGB", **WIDTH_KWARGS)
 
             elapsed = time.time() - t0
             fps = frame_count / max(0.001, elapsed)
@@ -561,44 +592,46 @@ def main():
 
             status_text.info(f"⚡ Pipeline FPS: **{fps:.1f}** | Inference: **{infer_ms:.1f}ms** | Tracking: **{track_ms:.1f}ms** | Active Targets: **{len(active_tracks)}** | Breaches: **{breach_count}** | Feed: **{feed_option}**")
 
-            # Render Incident Audit Log and Evidence Locker
+            # Render Incident Audit Log and Evidence Locker (Live updates)
             if st.session_state.evidence_locker:
                 with evidence_placeholder.container():
                     st.markdown("#### 📸 Intruder Incident Snapshot Evidence Locker")
                     cols = st.columns(min(4, len(st.session_state.evidence_locker)))
                     for idx_snap, snap in enumerate(reversed(st.session_state.evidence_locker[-4:])):
                         with cols[idx_snap % 4]:
-                            st.image(snap["image"], caption=f"ID #{snap['track_id']} | {snap['time_str']} | {snap['action']}\n{snap['reason']}", use_container_width=True)
+                            st.image(snap["image"], caption=f"ID #{snap['track_id']} | {snap['time_str']} | {snap['action']}\n{snap['reason']}", **WIDTH_KWARGS)
 
             if st.session_state.incident_log:
                 with table_placeholder.container():
-                    st.markdown("#### 📋 Real-Time Incident Audit Log")
+                    st.markdown(f"#### 📋 Real-Time Incident Audit Log ({len(st.session_state.incident_log)} Events Recorded)")
                     df_log = pd.DataFrame(st.session_state.incident_log[::-1])
-                    st.dataframe(df_log, use_container_width=True, height=180)
-                    col_csv, col_json = st.columns(2)
-                    with col_csv:
-                        csv_data = df_log.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Export Audit Log (CSV)", csv_data, "tripwire_incident_audit.csv", "text/csv")
-                    with col_json:
-                        json_data = json.dumps(st.session_state.incident_log, indent=2).encode('utf-8')
-                        st.download_button("📥 Export Forensic Report (JSON)", json_data, "tripwire_forensic_report.json", "application/json")
+                    st.dataframe(df_log, height=180, **WIDTH_KWARGS)
+                    st.caption("ℹ️ *To export CSV or JSON forensics reports, click **⏹️ Stop Feed** in the sidebar or expand **📥 Export Incident Logs**.*")
 
             time.sleep(0.015)
 
     elif not st.session_state.is_running:
         status_text.warning("⏸️ Surveillance pipeline is paused. Click **▶️ Start Live** in the sidebar to run.")
+        if st.session_state.evidence_locker:
+            with evidence_placeholder.container():
+                st.markdown("#### 📸 Intruder Incident Snapshot Evidence Locker")
+                cols = st.columns(min(4, len(st.session_state.evidence_locker)))
+                for idx_snap, snap in enumerate(reversed(st.session_state.evidence_locker[-4:])):
+                    with cols[idx_snap % 4]:
+                        st.image(snap["image"], caption=f"ID #{snap['track_id']} | {snap['time_str']} | {snap['action']}\n{snap['reason']}", **WIDTH_KWARGS)
+
         if st.session_state.incident_log:
             with table_placeholder.container():
-                st.markdown("#### 📋 Real-Time Incident Audit Log")
+                st.markdown(f"#### 📋 Real-Time Incident Audit Log ({len(st.session_state.incident_log)} Total Events)")
                 df_log = pd.DataFrame(st.session_state.incident_log[::-1])
-                st.dataframe(df_log, use_container_width=True, height=180)
+                st.dataframe(df_log, height=180, **WIDTH_KWARGS)
                 col_csv, col_json = st.columns(2)
                 with col_csv:
                     csv_data = df_log.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Export Audit Log (CSV)", csv_data, "tripwire_incident_audit.csv", "text/csv")
+                    st.download_button("📥 Export Audit Log (CSV)", csv_data, "tripwire_incident_audit.csv", "text/csv", key="paused_export_csv", **WIDTH_KWARGS)
                 with col_json:
                     json_data = json.dumps(st.session_state.incident_log, indent=2).encode('utf-8')
-                    st.download_button("📥 Export Forensic Report (JSON)", json_data, "tripwire_forensic_report.json", "application/json")
+                    st.download_button("📥 Export Forensic Report (JSON)", json_data, "tripwire_forensic_report.json", "application/json", key="paused_export_json", **WIDTH_KWARGS)
 
 if __name__ == "__main__":
     main()
