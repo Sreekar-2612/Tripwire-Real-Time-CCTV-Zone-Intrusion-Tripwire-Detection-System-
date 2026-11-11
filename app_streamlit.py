@@ -487,6 +487,8 @@ def main():
                                 break
 
                 speed_kmh = float(trk.get("speed", 0.0))
+                if speed_kmh < 0.8:
+                    speed_kmh = 0.0
                 if speed_kmh > speed_alarm:
                     is_confirmed_breach = True
                     breach_reasons.append(f"Speeding ({speed_kmh:.1f}km/h)")

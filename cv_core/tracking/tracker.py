@@ -261,6 +261,11 @@ class SingleTrack:
             self.pixel_vx = self.ema_alpha * raw_kf_vx + (1.0 - self.ema_alpha) * self.pixel_vx
             self.pixel_vy = self.ema_alpha * raw_kf_vy + (1.0 - self.ema_alpha) * self.pixel_vy
 
+        # Pixel-space velocity deadband (< 1.2 px/frame eliminates stationary bounding-box jitter)
+        if float(np.hypot(self.pixel_vx, self.pixel_vy)) < 1.2:
+            self.pixel_vx = 0.0
+            self.pixel_vy = 0.0
+
         # Update world coordinates and real-world metric velocity with EMA smoothing
         if world_pt is not None and len(world_pt) >= 2 and np.isfinite(world_pt[0]) and np.isfinite(world_pt[1]):
             clean_world_pt = (float(world_pt[0]), float(world_pt[1]))
@@ -281,6 +286,14 @@ class SingleTrack:
                 if not (np.isfinite(raw_vx) and np.isfinite(raw_vy)):
                     raw_vx, raw_vy = 0.0, 0.0
 
+                # Zero-Velocity Deadband Filtering (ZUPT):
+                # Clamp sensor noise, bounding-box quantization, and micro-movements below 0.8 km/h (~0.22 m/s)
+                SPEED_DEADBAND_KMH = 0.8
+                raw_spd_kmh = float(np.hypot(raw_vx, raw_vy) * 3.6)
+                if raw_spd_kmh < SPEED_DEADBAND_KMH:
+                    raw_vx = 0.0
+                    raw_vy = 0.0
+
                 self._raw_vx = raw_vx
                 self._raw_vy = raw_vy
 
@@ -293,7 +306,12 @@ class SingleTrack:
                     self.metric_vy = self.ema_alpha * raw_vy + (1.0 - self.ema_alpha) * self.metric_vy
 
                 spd = float(np.hypot(self.metric_vx, self.metric_vy) * 3.6)
-                self.metric_speed = min(35.0, spd if np.isfinite(spd) else 0.0)
+                if spd < SPEED_DEADBAND_KMH:
+                    self.metric_speed = 0.0
+                    self.metric_vx = 0.0
+                    self.metric_vy = 0.0
+                else:
+                    self.metric_speed = min(35.0, spd if np.isfinite(spd) else 0.0)
 
         # Update pose attributes with temporal majority smoothing
         if keypoints is not None:
@@ -637,7 +655,7 @@ class MultiTargetTracker:
                 if not (np.isfinite(vx) and np.isfinite(vy)):
                     vx, vy = 0.0, 0.0
                 speed_kmh = trk.metric_speed if trk.world_pos is not None else float(trk.speed * 3.6)
-                if not np.isfinite(speed_kmh):
+                if not np.isfinite(speed_kmh) or speed_kmh < 0.8:
                     speed_kmh = 0.0
                 track_info: Dict[str, Any] = {
                     "track_id": trk.track_id,
