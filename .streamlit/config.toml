@@ -1,5 +1,4 @@
 [client]
-showDeployButton = false
 toolbarMode = "minimal"
 
 [server]
@@ -15,4 +14,3 @@ backgroundColor = "#f8fafc"
 secondaryBackgroundColor = "#ffffff"
 textColor = "#0f172a"
 font = "sans serif"
-
