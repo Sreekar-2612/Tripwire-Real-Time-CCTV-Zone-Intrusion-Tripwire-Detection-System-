@@ -1,32 +1,32 @@
 {
   "cctv_sample.mp4": {
     "decoded_output_frames": 250,
-    "elapsed_sec": 26.79309110000031,
-    "fps": 9.330763631076412,
+    "elapsed_sec": 19.917231699975673,
+    "fps": 12.551945158136878,
     "cleanup_error": null
   },
   "corridor_tripwire_breach.mp4": {
     "decoded_output_frames": 120,
-    "elapsed_sec": 10.354471200000262,
-    "fps": 11.58919636572044,
+    "elapsed_sec": 8.929928099998506,
+    "fps": 13.437958139889176,
     "cleanup_error": null
   },
   "high_speed_fleeing_breach.mp4": {
     "decoded_output_frames": 60,
-    "elapsed_sec": 5.875720600000932,
-    "fps": 10.211513461002635,
+    "elapsed_sec": 4.197211399994558,
+    "fps": 14.295205621541436,
     "cleanup_error": null
   },
   "solutions_ci_demo.mp4": {
     "decoded_output_frames": 62,
-    "elapsed_sec": 6.016024399999878,
-    "fps": 10.305809265002525,
+    "elapsed_sec": 6.761053700000048,
+    "fps": 9.170168253507521,
     "cleanup_error": null
   },
   "walking_cctv.mp4": {
     "decoded_output_frames": 732,
-    "elapsed_sec": 68.02730539999902,
-    "fps": 10.760385049736374,
+    "elapsed_sec": 49.648208999977214,
+    "fps": 14.74373426039066,
     "cleanup_error": null
   }
 }

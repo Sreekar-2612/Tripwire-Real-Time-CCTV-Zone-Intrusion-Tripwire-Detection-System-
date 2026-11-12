@@ -249,14 +249,67 @@ class HomographyTransformer:
             "vy": round(vy, 3)
         }
 
+    @staticmethod
+    def _clip_line_to_viewport(
+        x1: float, y1: float, x2: float, y2: float,
+        u_min: float, v_min: float, u_max: float, v_max: float
+    ) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """
+        Liang-Barsky parametric 2D line clipping algorithm.
+        Clips line segment from (x1, y1) to (x2, y2) to viewport [u_min, v_min, u_max, v_max].
+        Returns integer pixel coordinate endpoints or None if segment is entirely outside.
+        """
+        if not (np.isfinite(x1) and np.isfinite(y1) and np.isfinite(x2) and np.isfinite(y2)):
+            return None
+        dx = x2 - x1
+        dy = y2 - y1
+        p = [-dx, dx, -dy, dy]
+        q = [x1 - u_min, u_max - x1, y1 - v_min, v_max - y1]
+        u1, u2 = 0.0, 1.0
+        for pi, qi in zip(p, q):
+            if pi == 0:
+                if qi < 0:
+                    return None
+            else:
+                t = qi / pi
+                if pi < 0:
+                    if t > u2:
+                        return None
+                    if t > u1:
+                        u1 = t
+                elif pi > 0:
+                    if t < u1:
+                        return None
+                    if t < u2:
+                        u2 = t
+        if u1 > u2:
+            return None
+        cx1 = x1 + u1 * dx
+        cy1 = y1 + u1 * dy
+        cx2 = x1 + u2 * dx
+        cy2 = y1 + u2 * dy
+        return ((int(round(cx1)), int(round(cy1))), (int(round(cx2)), int(round(cy2))))
+
     def project_ground_grid_to_image(
         self,
         image_shape: Tuple[int, int],
-        grid_step_m: float = 2.0
+        grid_step_m: float = 2.0,
+        max_visible_y: Optional[float] = None
     ) -> List[Tuple[Tuple[int, int], Tuple[int, int]]]:
         """
         Projects real-world ground grid lines (X and Y in meters) into camera image pixel coordinates.
-        Returns list of ((u1, v1), (u2, v2)) line segments to render on perspective view.
+        Clips and clamps lines to the valid visible floor plane in front of the camera so grid lines
+        do not shoot up into walls, doors, or ceilings.
+
+        Args:
+            image_shape: (height, width) of the target camera frame.
+            grid_step_m: Step size in meters between ground grid lines.
+            max_visible_y: Optional upper bound in meters for visible ground depth (Y).
+                           If None, clamps to the visible floor horizon limit (defaulting
+                           to 6.0m when default 20m bounds are present).
+
+        Returns:
+            List of ((u1, v1), (u2, v2)) pixel coordinate segments to render on perspective view.
         """
         if not self.is_calibrated:
             return []
@@ -264,27 +317,35 @@ class HomographyTransformer:
         h, w = image_shape[:2]
         x_min, y_min, x_max, y_max = self.world_bounds
         step = float(grid_step_m) if (grid_step_m is not None and grid_step_m > 1e-3) else 2.0
+
+        if max_visible_y is not None:
+            effective_y_max = min(y_max, max(y_min, float(max_visible_y)))
+        else:
+            effective_y_max = min(y_max, 6.0) if y_max >= 20.0 else y_max
+
         segments = []
 
-        # X-lines (constant X, varying Y)
-        x_vals = np.arange(x_min, x_max + step, step)
+        # X-lines (constant X, varying Y across visible floor plane)
+        x_vals = np.arange(x_min, x_max + 1e-5, step)
         for x in x_vals:
             try:
                 u1, v1 = self.world_to_image(x, y_min)
-                u2, v2 = self.world_to_image(x, y_max)
-                if 0 <= u1 < w * 2 and 0 <= v1 < h * 2 and 0 <= u2 < w * 2 and 0 <= v2 < h * 2:
-                    segments.append(((int(u1), int(v1)), (int(u2), int(v2))))
+                u2, v2 = self.world_to_image(x, effective_y_max)
+                clipped = self._clip_line_to_viewport(u1, v1, u2, v2, 0.0, 0.0, float(w), float(h))
+                if clipped is not None:
+                    segments.append(clipped)
             except Exception:
                 continue
 
-        # Y-lines (constant Y, varying X)
-        y_vals = np.arange(y_min, y_max + step, step)
+        # Y-lines (constant Y, varying X across visible floor width)
+        y_vals = np.arange(y_min, effective_y_max + 1e-5, step)
         for y in y_vals:
             try:
                 u1, v1 = self.world_to_image(x_min, y)
                 u2, v2 = self.world_to_image(x_max, y)
-                if 0 <= u1 < w * 2 and 0 <= v1 < h * 2 and 0 <= u2 < w * 2 and 0 <= v2 < h * 2:
-                    segments.append(((int(u1), int(v1)), (int(u2), int(v2))))
+                clipped = self._clip_line_to_viewport(u1, v1, u2, v2, 0.0, 0.0, float(w), float(h))
+                if clipped is not None:
+                    segments.append(clipped)
             except Exception:
                 continue
 

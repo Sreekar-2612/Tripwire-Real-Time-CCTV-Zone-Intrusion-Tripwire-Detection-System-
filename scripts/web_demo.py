@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager
 
 from ultralytics import YOLO
 from cv_core.geometry.homography import HomographyTransformer
-from cv_core.geometry.zones_3d import MetricZone3D
+from cv_core.geometry.zones_3d import MetricZone3D, get_default_zones
 from cv_core.tracking.tracker import MultiTargetTracker
 from cv_core.visualizer.bev_radar import BEVRadarRenderer
 from cv_core.kinetics.pose_classifier import PoseKineticClassifier, draw_pose_skeleton
@@ -90,10 +90,7 @@ class WebStreamEngine:
         self.radar = BEVRadarRenderer(radar_size=480, world_extent_m=20.0, grid_step_m=2.0)
         self.transformer = HomographyTransformer()
 
-        self.zones = [
-            MetricZone3D("z1", "RESTRICTED VAULT", "polygon", [(3.5, 1.2), (7.5, 1.2), (7.5, 2.8), (3.5, 2.8)]),
-            MetricZone3D("tw1", "PERIMETER FENCE", "tripwire", [(2.0, 2.2), (8.0, 2.2)])
-        ]
+        self.zones = get_default_zones(self.active_feed)
         self.lock = threading.Lock()
         self.cap = None
         self.last_reconnect_time = 0.0
@@ -136,6 +133,7 @@ class WebStreamEngine:
         if not self.transformer.is_calibrated and Path("data/calibration.json").exists():
             self.transformer = HomographyTransformer.load_calibration("data/calibration.json")
         self.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=.3)
+        self.zones = get_default_zones(self.active_feed)
         self.monitor = ZoneMonitor()
         self.latest_jpeg = None
         self.last_frame_time = float('-inf')
@@ -237,6 +235,44 @@ class WebStreamEngine:
                 zones=self.zones, elapsed_dt=elapsed_dt
             )
             alarm_states, _ = self.monitor.update(tracks, self.zones, elapsed_dt)
+            display_frame = frame.copy()
+            if self.transformer.is_calibrated:
+                poly_overlay = display_frame.copy()
+                has_polys = False
+                for z in self.zones:
+                    if z.zone_type == "polygon":
+                        try:
+                            pts = [self.transformer.world_to_image(x, y) for x, y in z.world_coords]
+                            pts_np = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+                            cv2.fillPoly(poly_overlay, [pts_np], (0, 140, 255))
+                            has_polys = True
+                        except Exception:
+                            pass
+                if has_polys:
+                    cv2.addWeighted(poly_overlay, 0.30, display_frame, 0.70, 0, display_frame)
+
+                for z in self.zones:
+                    if z.zone_type == "polygon":
+                        try:
+                            pts = [self.transformer.world_to_image(x, y) for x, y in z.world_coords]
+                            pts_np = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+                            cv2.polylines(display_frame, [pts_np], True, (0, 185, 255), 2, cv2.LINE_AA)
+                            lbl_x = int(min(p[0] for p in pts)) + 8
+                            lbl_y = int(min(p[1] for p in pts)) + 20
+                            cv2.putText(display_frame, z.name, (lbl_x, lbl_y), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 215, 255), 1, cv2.LINE_AA)
+                        except Exception:
+                            pass
+                    elif z.zone_type == "tripwire":
+                        try:
+                            p1 = self.transformer.world_to_image(*z.world_coords[0])
+                            p2 = self.transformer.world_to_image(*z.world_coords[1])
+                            ip1 = (int(p1[0]), int(p1[1]))
+                            ip2 = (int(p2[0]), int(p2[1]))
+                            cv2.line(display_frame, ip1, ip2, (0, 0, 255), 2, cv2.LINE_AA)
+                            cv2.putText(display_frame, z.name, (ip1[0] + 10, ip1[1] - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 0, 255), 1, cv2.LINE_AA)
+                        except Exception:
+                            pass
+
             radar_tracks = []
             for trk in tracks:
                 w_pos = trk.get("world_pos")
@@ -255,19 +291,20 @@ class WebStreamEngine:
 
                 # Render Skeleton Keypoints if available
                 if is_pose_active and trk.get("keypoints") is not None:
-                    draw_pose_skeleton(frame, trk["keypoints"])
+                    draw_pose_skeleton(display_frame, trk["keypoints"])
 
                 x1, y1, x2, y2 = map(int, trk["bbox"])
                 box_color = (0, 0, 255) if is_breach else (0, 240, 255)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
+                cv2.rectangle(display_frame, (x1, y1), (x2, y2), box_color, 2)
 
-                label_text = f"#{trk['track_id']} | {posture.upper()} | " + (f"{speed_kmh:.1f} km/h" if w_pos is not None else "speed unavailable")
-                cv2.putText(frame, label_text, (x1, max(16, y1 - 8)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.52, box_color, 2)
+                prefix = "🚨 " if is_breach else ""
+                label_text = f"{prefix}#{trk['track_id']} | {posture.upper()} | " + (f"{speed_kmh:.1f} km/h" if w_pos is not None else "speed unavailable")
+                cv2.putText(display_frame, label_text, (x1, max(16, y1 - 8)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.52, box_color, 2, cv2.LINE_AA)
 
             radar_img = self.radar.render(self.zones if self.transformer.is_calibrated else [], radar_tracks,
                                           title='GROUND RADAR' if self.transformer.is_calibrated else 'UNCALIBRATED - METRIC ALARMS DISABLED')
-            dual_view = BEVRadarRenderer.create_dual_view(frame, radar_img)
+            dual_view = BEVRadarRenderer.create_dual_view(display_frame, radar_img)
 
             # Resize for responsive web streaming
             dual_view_resized = cv2.resize(dual_view, (1200, 500))

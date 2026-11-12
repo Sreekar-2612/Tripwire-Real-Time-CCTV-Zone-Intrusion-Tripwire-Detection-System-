@@ -195,3 +195,55 @@ def test_project_ground_grid_handles_zero_or_negative_step():
     segs_neg = transformer.project_ground_grid_to_image((480, 640), grid_step_m=-2.0)
     assert isinstance(segs_neg, list)
 
+
+def test_project_ground_grid_viewport_clipping_and_max_visible_y():
+    """Verify ground grid lines are clipped to viewport and clamped by max_visible_y."""
+    calib_path = Path("data/calibration.json")
+    if not calib_path.exists():
+        pytest.skip("data/calibration.json not found")
+    transformer = HomographyTransformer.load_calibration(calib_path)
+    h, w = 432, 768
+
+    # Project with max_visible_y = 6.0m
+    segments = transformer.project_ground_grid_to_image((h, w), grid_step_m=2.0, max_visible_y=6.0)
+    assert len(segments) > 0
+
+    # Ensure EVERY endpoint is strictly within visible frame [0, w] x [0, h]
+    # and not shooting up into ceilings (v < 300)
+    for (u1, v1), (u2, v2) in segments:
+        assert 0 <= u1 <= w and 0 <= u2 <= w, f"X coords out of frame: {u1}, {u2}"
+        assert 0 <= v1 <= h and 0 <= v2 <= h, f"Y coords out of frame: {v1}, {v2}"
+        # With max_visible_y=6.0m, ground grid lines should stay on the floor (v >= 310)
+        assert v1 >= 310 and v2 >= 310, f"Grid line shot up into wall/ceiling: ({u1}, {v1}) -> ({u2}, {v2})"
+
+
+def test_corridor_feed_tripwire_and_vault_geometry():
+    """Verify calibrated realistic ground coordinates for corridor feeds."""
+    from cv_core.geometry.zones_3d import get_default_zones
+    calib_path = Path("data/calibration.json")
+    if not calib_path.exists():
+        pytest.skip("data/calibration.json not found")
+    transformer = HomographyTransformer.load_calibration(calib_path)
+
+    zones = get_default_zones("corridor_tripwire_breach")
+    vault = next(z for z in zones if z.zone_id == "z_alcove")
+    tripwire = next(z for z in zones if z.zone_id == "tw_chk")
+
+    # 1. Tripwire check: Y=2.3m sits cleanly on the floor at v ~ 405-415
+    u1, v1 = transformer.world_to_image(*tripwire.world_coords[0])
+    u2, v2 = transformer.world_to_image(*tripwire.world_coords[1])
+    assert 405 <= v1 <= 415, f"Tripwire v1={v1} not on floor"
+    assert 405 <= v2 <= 415, f"Tripwire v2={v2} not on floor"
+    assert 0 <= u1 <= 768 and 0 <= u2 <= 768
+
+    # 2. Vault check: strictly on floor within 768x432 frame
+    for x, y in vault.world_coords:
+        u, v = transformer.world_to_image(x, y)
+        assert 0 <= u <= 768, f"Vault u={u} off-screen"
+        assert 370 <= v <= 432, f"Vault v={v} floating up wall/off-floor"
+
+    # 3. Person walking from (6.51, 2.96) to (6.24, 2.21) triggers CROSS_IN
+    crossing = tripwire.check_tripwire_crossing((6.51, 2.96), (6.24, 2.21))
+    assert crossing == "CROSS_IN"
+
+

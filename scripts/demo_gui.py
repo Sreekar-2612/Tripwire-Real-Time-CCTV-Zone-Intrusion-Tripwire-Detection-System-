@@ -12,7 +12,7 @@ import numpy as np
 
 from ultralytics import YOLO
 from cv_core.geometry.homography import HomographyTransformer
-from cv_core.geometry.zones_3d import MetricZone3D
+from cv_core.geometry.zones_3d import MetricZone3D, get_default_zones
 from cv_core.tracking.tracker import MultiTargetTracker
 from cv_core.visualizer.bev_radar import BEVRadarRenderer
 from cv_core.kinetics.pose_classifier import PoseKineticClassifier, draw_pose_skeleton
@@ -27,9 +27,11 @@ class TripwireInteractiveDemo:
     """
     def __init__(self):
         self.videos = {
-            "1": "data/videos/walking_cctv.mp4",
-            "2": "data/videos/cctv_sample.mp4",
-            "3": "data/videos/solutions_ci_demo.mp4",
+            "1": "data/videos/corridor_tripwire_breach.mp4",
+            "2": "data/videos/high_speed_fleeing_breach.mp4",
+            "3": "data/videos/walking_cctv.mp4",
+            "4": "data/videos/cctv_sample.mp4",
+            "5": "data/videos/solutions_ci_demo.mp4",
             "0": "0"  # Webcam
         }
         self.current_video_key = "1"
@@ -49,10 +51,7 @@ class TripwireInteractiveDemo:
         # Planar Homography Transformer
         self.transformer = HomographyTransformer()
         # Metric Ground Zones
-        self.zones = [
-            MetricZone3D("z1", "RESTRICTED VAULT", "polygon", [(3.0, 3.0), (12.0, 3.0), (12.0, 10.0), (3.0, 10.0)]),
-            MetricZone3D("tw1", "PERIMETER FENCE", "tripwire", [(0.0, 6.0), (16.0, 6.0)])
-        ]
+        self.zones = get_default_zones(self.videos[self.current_video_key])
 
         self.cap = None
         self._load_source(self.current_video_key)
@@ -62,6 +61,7 @@ class TripwireInteractiveDemo:
             self.cap.release()
         self.current_video_key = key
         src = self.videos.get(key, self.videos["1"])
+        self.zones = get_default_zones(src)
         cap_target = int(src) if src.isdigit() else src
         self.cap = cv2.VideoCapture(cap_target)
         self.clock = FrameClock(self.cap, live=src.isdigit() or '://' in src)
@@ -126,7 +126,7 @@ class TripwireInteractiveDemo:
                             key = cv2.waitKey(100) & 0xFF
                             if key == ord('q'):
                                 break
-                            elif key in [ord('1'), ord('2'), ord('3'), ord('0')]:
+                            elif chr(key) in self.videos:
                                 self._load_source(chr(key))
                             continue
 
@@ -142,7 +142,7 @@ class TripwireInteractiveDemo:
                 elapsed_dt = self.clock.tick()
                 clean_frame = frame.copy()
 
-                # 1. Projective Ground Grid Overlay
+                # 1. Projective Ground Grid & Zone Overlay
                 if self.show_grid and self.transformer.is_calibrated:
                     segments = self.transformer.project_ground_grid_to_image(frame.shape[:2], grid_step_m=2.0)
                     grid_overlay = frame.copy()
@@ -150,19 +150,56 @@ class TripwireInteractiveDemo:
                         cv2.line(grid_overlay, pt1, pt2, (60, 80, 90), 1, cv2.LINE_AA)
                     cv2.addWeighted(grid_overlay, 0.4, frame, 0.6, 0, frame)
 
+                if self.transformer.is_calibrated:
+                    poly_overlay = frame.copy()
+                    has_polys = False
+                    for z in self.zones:
+                        if z.zone_type == "polygon":
+                            try:
+                                pts = [self.transformer.world_to_image(x, y) for x, y in z.world_coords]
+                                pts_np = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+                                cv2.fillPoly(poly_overlay, [pts_np], (0, 140, 255))
+                                has_polys = True
+                            except Exception:
+                                pass
+                    if has_polys:
+                        cv2.addWeighted(poly_overlay, 0.30, frame, 0.70, 0, frame)
+
+                    for z in self.zones:
+                        if z.zone_type == "polygon":
+                            try:
+                                pts = [self.transformer.world_to_image(x, y) for x, y in z.world_coords]
+                                pts_np = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+                                cv2.polylines(frame, [pts_np], True, (0, 185, 255), 2, cv2.LINE_AA)
+                                lbl_x = int(min(p[0] for p in pts)) + 8
+                                lbl_y = int(min(p[1] for p in pts)) + 20
+                                cv2.putText(frame, z.name, (lbl_x, lbl_y), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 215, 255), 1, cv2.LINE_AA)
+                            except Exception:
+                                pass
+                        elif z.zone_type == "tripwire":
+                            try:
+                                p1 = self.transformer.world_to_image(*z.world_coords[0])
+                                p2 = self.transformer.world_to_image(*z.world_coords[1])
+                                ip1 = (int(p1[0]), int(p1[1]))
+                                ip2 = (int(p2[0]), int(p2[1]))
+                                cv2.line(frame, ip1, ip2, (0, 0, 255), 2, cv2.LINE_AA)
+                                cv2.putText(frame, z.name, (ip1[0] + 10, ip1[1] - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 0, 255), 1, cv2.LINE_AA)
+                            except Exception:
+                                pass
+
                 # 2. YOLOv8 Detection
                 results = self.detector(clean_frame, classes=[0], conf=min(self.conf_threshold, self.tracker.low_conf_threshold), verbose=False)
                 detections = []
                 for r in results:
                     if r.boxes is not None:
-                        for box in r.boxes:
+                        for idx_b, box in enumerate(r.boxes):
                             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                             conf = float(box.conf[0].cpu().numpy())
                             detections.append({
                                 "bbox": [float(x1), float(y1), float(x2), float(y2)],
                                 "confidence": conf,
                                 "foot_point": ((x1 + x2) / 2.0, float(y2)),
-                                "keypoints": r.keypoints.data[index].cpu().numpy() if self.show_pose and r.keypoints is not None else None
+                                "keypoints": r.keypoints.data[idx_b].cpu().numpy() if self.show_pose and r.keypoints is not None and idx_b < len(r.keypoints.data) else None
                             })
 
                 # 3. Kalman Tracker & Homography
@@ -221,7 +258,7 @@ class TripwireInteractiveDemo:
                     cv2.putText(dual_view, "⚠️ PERIMETER BREACH ACTIVE", (dw // 2 - 120, 26),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
 
-                controls_str = "[1/2/3/0] Switch Video | [SPACE] Pause | [G] Grid | [S] Snapshot | [Q] Quit"
+                controls_str = "[1-5/0] Switch Video | [SPACE] Pause | [G] Grid | [S] Snapshot | [Q] Quit"
                 (cw, _), _ = cv2.getTextSize(controls_str, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
                 cv2.putText(dual_view, controls_str, (dw - cw - 16, 26),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.42, (160, 180, 200), 1, cv2.LINE_AA)
@@ -236,7 +273,7 @@ class TripwireInteractiveDemo:
                     self.paused = not self.paused
                 elif key == ord('g'):
                     self.show_grid = not self.show_grid
-                elif key in [ord('1'), ord('2'), ord('3'), ord('0')]:
+                elif chr(key) in self.videos:
                     self._load_source(chr(key))
                 elif key == ord('s'):
                     snap_path = f"data/snapshot_{int(time.time())}.jpg"

@@ -1,12 +1,18 @@
 """Bounded real-inference smoke checks. Run from repository root."""
 import ast
 import json
+import sys
 import time
 import importlib.metadata as metadata
 from pathlib import Path
 from unittest.mock import patch
 import cv2
 import numpy as np
+
+# Ensure repository root is on sys.path
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
 
 
 def inventory():
@@ -181,7 +187,7 @@ def streamlit_checks():
             return self.cap.get(*args)
         def release(self):
             return self.cap.release()
-    at = AppTest.from_file('app_streamlit.py', default_timeout=60).run()
+    at = AppTest.from_file(str(repo_root / 'app_streamlit.py'), default_timeout=60).run()
     assert not at.exception, list(at.exception)
     with patch.object(cv2, 'VideoCapture', BoundedCapture):
         at.button(key='btn_start_live').click().run(timeout=60)

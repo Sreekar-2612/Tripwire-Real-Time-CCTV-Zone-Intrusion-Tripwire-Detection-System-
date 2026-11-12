@@ -123,3 +123,40 @@ class MetricZone3D:
             return "CROSS_OUT"
 
         return None
+
+
+def get_default_zones(source: Optional[Any] = None, preset: str = "realistic") -> List[MetricZone3D]:
+    """
+    Returns properly calibrated metric security zones and tripwires for a given feed source and preset.
+    Harmonizes zone definitions across Streamlit, FastAPI MJPEG web demo, desktop GUI, and CLI pipeline.
+    """
+    preset_lower = str(preset or "").lower()
+    if "stress" in preset_lower or "center" in preset_lower:
+        return [
+            MetricZone3D("z1", "RESTRICTED VAULT (CENTER HALL)", "polygon", [(3.5, 1.8), (7.5, 1.8), (7.5, 3.2), (3.5, 3.2)]),
+            MetricZone3D("tw1", "PERIMETER FENCE", "tripwire", [(3.5, 2.3), (7.5, 2.3)])
+        ]
+
+    feed_str = str(source or "").lower()
+    if "pedestrian" in feed_str or "solutions_ci" in feed_str:
+        return [
+            MetricZone3D("z_ped", "RESTRICTED PLAZA BUFFER", "polygon", [(2.0, 7.0), (6.5, 7.0), (6.5, 9.5), (2.0, 9.5)]),
+            MetricZone3D("tw_ped", "CROSSWALK TRIPWIRE", "tripwire", [(1.0, 10.0), (7.5, 10.0)])
+        ]
+    elif "laptop" in feed_str or "webcam" in feed_str or feed_str in ("0", "1"):
+        return [
+            MetricZone3D("z_webcam", "RESTRICTED WORKSPACE", "polygon", [(3.2, 1.8), (6.8, 1.8), (6.8, 3.2), (3.2, 3.2)]),
+            MetricZone3D("tw_webcam", "DESK TRIPWIRE", "tripwire", [(2.8, 2.2), (7.0, 2.2)])
+        ]
+    elif "high-speed" in feed_str or "flee" in feed_str or "template_speed" in feed_str:
+        return [
+            MetricZone3D("z_flee", "RESTRICTED VAULT", "polygon", [(5.6, 2.0), (7.4, 2.0), (7.4, 3.4), (5.6, 3.4)]),
+            MetricZone3D("tw_flee", "PERIMETER TRIPWIRE", "tripwire", [(3.5, 2.3), (7.5, 2.3)])
+        ]
+    else:
+        # Default Corridor / Hallway layout calibrated for corridor_tripwire_breach, walking_cctv, cctv_sample
+        return [
+            MetricZone3D("z_alcove", "RESTRICTED OFFICE VAULT", "polygon", [(5.6, 2.0), (7.4, 2.0), (7.4, 3.4), (5.6, 3.4)]),
+            MetricZone3D("tw_chk", "CHECKPOINT TRIPWIRE", "tripwire", [(3.5, 2.3), (7.5, 2.3)])
+        ]
+

@@ -93,7 +93,7 @@ def test_streamlit_records_two_people_once_and_exports_after_stop():
             return False
         def release(self):
             self.open = False
-    tracks = [dict(track_id=n, bbox=[10*n, 10, 10*n+8, 40], world_pos=(7, 4),
+    tracks = [dict(track_id=n, bbox=[10*n, 10, 10*n+8, 40], world_pos=(6.5, 2.8),
                    speed=0, posture='standing', threat_level=1) for n in (1, 2)]
     raw_frames = []
     def detector(frame, **kwargs):
@@ -132,3 +132,61 @@ def test_desktop_disconnected_quit_releases_capture():
          patch.object(cv2, 'waitKey', return_value=ord('q')), patch.object(cv2, 'destroyAllWindows'):
         demo.run()
     demo.cap.release.assert_called_once()
+
+
+def test_streamlit_corridor_tripwire_breach_incident_pipeline():
+    from streamlit.testing.v1 import AppTest
+    from streamlit.delta_generator import DeltaGenerator
+    from cv_core.tracking.tracker import MultiTargetTracker
+    calibration = BytesIO(Path('data/calibration.json').read_bytes())
+
+    class CrossingCapture:
+        def __init__(self, *args):
+            self.n = 0
+            self.open = True
+        def isOpened(self):
+            return self.open
+        def get(self, key):
+            return {cv2.CAP_PROP_FPS: 12, cv2.CAP_PROP_FRAME_WIDTH: 768,
+                    cv2.CAP_PROP_FRAME_HEIGHT: 432, cv2.CAP_PROP_POS_MSEC: self.n * 83.3}.get(key, 0)
+        def read(self):
+            self.n += 1
+            # 6 frames: target crosses from Y=2.5 to Y=2.1 (across tripwire at Y=2.3)
+            return (True, np.zeros((432, 768, 3), np.uint8)) if self.n <= 6 else (False, None)
+        def set(self, *args):
+            return False
+        def release(self):
+            self.open = False
+
+    # Simulate target walking across Y=2.3 (frame 1 at Y=2.6, frame 2 at Y=2.2)
+    track_seq = [
+        [dict(track_id=1, bbox=[100, 100, 150, 300], world_pos=(6.0, 2.6), speed=3.0, posture='walking', threat_level=1)],
+        [dict(track_id=1, bbox=[100, 100, 150, 300], world_pos=(6.0, 2.2), speed=3.0, posture='walking', threat_level=1)],
+        [dict(track_id=1, bbox=[100, 100, 150, 300], world_pos=(6.0, 2.1), speed=3.0, posture='walking', threat_level=1)],
+        [dict(track_id=1, bbox=[100, 100, 150, 300], world_pos=(6.0, 2.0), speed=3.0, posture='walking', threat_level=1)],
+        [dict(track_id=1, bbox=[100, 100, 150, 300], world_pos=(6.0, 1.9), speed=3.0, posture='walking', threat_level=1)],
+        [dict(track_id=1, bbox=[100, 100, 150, 300], world_pos=(6.0, 1.8), speed=3.0, posture='walking', threat_level=1)],
+    ]
+    seq_iter = iter(track_seq)
+
+    def mock_tracker_update(*args, **kwargs):
+        return next(seq_iter, [])
+
+    at = AppTest.from_file(APP_SCRIPT, default_timeout=30).run()
+    with patch.object(DeltaGenerator, 'file_uploader', return_value=calibration), \
+         patch.object(cv2, 'VideoCapture', CrossingCapture), \
+         patch.object(MultiTargetTracker, 'update', side_effect=mock_tracker_update), \
+         patch('ultralytics.YOLO', return_value=lambda frame, **kw: []):
+        at.button(key='btn_start_live').click().run(timeout=30)
+
+    assert not at.exception, list(at.exception)
+    events = at.session_state['incident_log']
+    tripwire_events = [e for e in events if e.get('Zone') == 'tw_chk' and e.get('Event') in ('CROSS_IN', 'CROSS_OUT')]
+    assert len(tripwire_events) >= 1, f"Expected tripwire event, got: {events}"
+    assert any('CHECKPOINT TRIPWIRE' in e.get('Incident Reason', '') for e in tripwire_events)
+
+    locker = at.session_state['evidence_locker']
+    assert len(locker) >= 1, "Evidence locker snapshot expected on breach"
+    assert any(s.get('track_id') == 1 for s in locker)
+    assert any('CHECKPOINT TRIPWIRE' in s.get('reason', '') for s in locker)
+

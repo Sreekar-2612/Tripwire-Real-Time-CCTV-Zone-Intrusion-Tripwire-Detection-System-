@@ -7,13 +7,13 @@
     {
       "pose": false,
       "frames": 8,
-      "fps_including_startup": 0.9695993281060602,
+      "fps_including_startup": 1.0659873200520185,
       "tracks": 0
     },
     {
       "pose": true,
       "frames": 8,
-      "fps_including_startup": 3.512578301405526,
+      "fps_including_startup": 5.472779387219832,
       "tracks": 0
     }
   ]

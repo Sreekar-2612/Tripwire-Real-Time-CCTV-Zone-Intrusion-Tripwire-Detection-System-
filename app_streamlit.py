@@ -31,7 +31,7 @@ DATAFRAME_KWARGS = {"use_container_width": True}
 
 from ultralytics import YOLO
 from cv_core.geometry.homography import HomographyTransformer
-from cv_core.geometry.zones_3d import MetricZone3D
+from cv_core.geometry.zones_3d import MetricZone3D, get_default_zones
 from cv_core.tracking.tracker import MultiTargetTracker
 from cv_core.kinetics.pose_classifier import PoseKineticClassifier, draw_pose_skeleton
 from cv_core.visualizer.bev_radar import BEVRadarRenderer
@@ -336,32 +336,7 @@ def main():
             st.session_state._calibration_key = calibration_key
         tracker = st.session_state.tracker
 
-        if zone_preset == "Demo Stress Test (Center Hallway)":
-            zones = [
-                MetricZone3D("z1", "RESTRICTED VAULT (CENTER HALL)", "polygon", [(3.5, 1.2), (7.5, 1.2), (7.5, 2.8), (3.5, 2.8)]),
-                MetricZone3D("tw1", "PERIMETER FENCE", "tripwire", [(2.0, 2.2), (8.0, 2.2)])
-            ]
-        else:  # Realistic Security
-            if "Pedestrian" in feed_option:
-                zones = [
-                    MetricZone3D("z_ped", "RESTRICTED PLAZA BUFFER", "polygon", [(4.0, 8.0), (16.0, 8.0), (16.0, 14.0), (4.0, 14.0)]),
-                    MetricZone3D("tw_ped", "CROSSWALK TRIPWIRE", "tripwire", [(2.0, 11.0), (18.0, 11.0)])
-                ]
-            elif "Laptop" in feed_option or "Webcam" in feed_option:
-                zones = [
-                    MetricZone3D("z_webcam", "RESTRICTED WORKSPACE", "polygon", [(2.0, 1.0), (8.0, 1.0), (8.0, 4.0), (2.0, 4.0)]),
-                    MetricZone3D("tw_webcam", "DESK TRIPWIRE", "tripwire", [(1.5, 2.5), (8.5, 2.5)])
-                ]
-            elif "High-Speed" in feed_option:
-                zones = [
-                    MetricZone3D("z_flee", "RESTRICTED VAULT", "polygon", [(5.5, 2.0), (9.0, 2.0), (9.0, 6.0), (5.5, 6.0)]),
-                    MetricZone3D("tw_flee", "PERIMETER TRIPWIRE", "tripwire", [(1.5, 3.8), (8.5, 3.8)])
-                ]
-            else:
-                zones = [
-                    MetricZone3D("z_alcove", "RESTRICTED OFFICE VAULT", "polygon", [(6.0, 3.0), (9.5, 3.0), (9.5, 7.5), (6.0, 7.5)]),
-                    MetricZone3D("tw_chk", "CHECKPOINT TRIPWIRE", "tripwire", [(2.0, 4.5), (8.5, 4.5)])
-                ]
+        zones = get_default_zones(feed_option, preset=zone_preset)
 
         frame_count = 0
         t0 = time.time()
@@ -408,32 +383,65 @@ def main():
                 # Grid & Security Zone Projection on Camera View
                 if transformer.is_calibrated:
                     if show_grid:
-                        segments = transformer.project_ground_grid_to_image(display_frame.shape[:2], grid_step_m=2.0)
+                        max_y = 12.0 if "Pedestrian" in feed_option else (4.0 if ("Laptop" in feed_option or "Webcam" in feed_option) else 6.0)
+                        segments = transformer.project_ground_grid_to_image(display_frame.shape[:2], grid_step_m=2.0, max_visible_y=max_y)
                         grid_overlay = display_frame.copy()
                         for pt1, pt2 in segments:
                             cv2.line(grid_overlay, pt1, pt2, (60, 80, 90), 1, cv2.LINE_AA)
                         cv2.addWeighted(grid_overlay, 0.4, display_frame, 0.6, 0, display_frame)
+
+                    poly_overlay = display_frame.copy()
+                    has_polys = False
+                    for z in zones:
+                        if z.zone_type == "polygon":
+                            try:
+                                pts = [transformer.world_to_image(x, y) for x, y in z.world_coords]
+                                pts_np = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+                                cv2.fillPoly(poly_overlay, [pts_np], (0, 140, 255))
+                                has_polys = True
+                            except Exception:
+                                pass
+
+                    if has_polys:
+                        cv2.addWeighted(poly_overlay, 0.30, display_frame, 0.70, 0, display_frame)
 
                     for z in zones:
                         if z.zone_type == "polygon":
                             try:
                                 pts = [transformer.world_to_image(x, y) for x, y in z.world_coords]
                                 pts_np = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
-                                overlay = display_frame.copy()
-                                cv2.fillPoly(overlay, [pts_np], (0, 140, 255))
-                                cv2.addWeighted(overlay, 0.25, display_frame, 0.75, 0, display_frame)
-                                cv2.polylines(display_frame, [pts_np], True, (0, 165, 255), 2, cv2.LINE_AA)
-                                cv2.putText(display_frame, z.name, (int(pts[3][0]) + 10, int(pts[3][1]) + 20),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 255), 2, cv2.LINE_AA)
+                                cv2.polylines(display_frame, [pts_np], True, (0, 185, 255), 2, cv2.LINE_AA)
+                                for pt in pts:
+                                    cv2.circle(display_frame, (int(pt[0]), int(pt[1])), 4, (0, 220, 255), -1, cv2.LINE_AA)
+                                lbl_x = int(min(p[0] for p in pts)) + 8
+                                lbl_y = int(min(p[1] for p in pts)) + 20
+                                (lw, lh), _ = cv2.getTextSize(z.name, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
+                                cv2.rectangle(display_frame, (lbl_x - 3, lbl_y - lh - 4), (lbl_x + lw + 4, lbl_y + 4), (15, 20, 25), -1)
+                                cv2.rectangle(display_frame, (lbl_x - 3, lbl_y - lh - 4), (lbl_x + lw + 4, lbl_y + 4), (0, 165, 255), 1)
+                                cv2.putText(display_frame, z.name, (lbl_x, lbl_y),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 215, 255), 1, cv2.LINE_AA)
                             except Exception:
                                 pass
                         elif z.zone_type == "tripwire":
                             try:
                                 p1 = transformer.world_to_image(*z.world_coords[0])
                                 p2 = transformer.world_to_image(*z.world_coords[1])
-                                cv2.line(display_frame, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), (0, 0, 255), 2, cv2.LINE_AA)
-                                cv2.putText(display_frame, z.name, (int(p1[0]) + 15, int(p1[1]) - 6),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2, cv2.LINE_AA)
+                                ip1 = (int(p1[0]), int(p1[1]))
+                                ip2 = (int(p2[0]), int(p2[1]))
+                                wire_overlay = display_frame.copy()
+                                cv2.line(wire_overlay, ip1, ip2, (0, 0, 255), 4, cv2.LINE_AA)
+                                cv2.addWeighted(wire_overlay, 0.4, display_frame, 0.6, 0, display_frame)
+                                cv2.line(display_frame, ip1, ip2, (50, 50, 255), 2, cv2.LINE_AA)
+                                cv2.circle(display_frame, ip1, 5, (0, 0, 255), -1, cv2.LINE_AA)
+                                cv2.circle(display_frame, ip2, 5, (0, 0, 255), -1, cv2.LINE_AA)
+                                mid_x = (ip1[0] + ip2[0]) // 2
+                                mid_y = (ip1[1] + ip2[1]) // 2 - 8
+                                (lw, lh), _ = cv2.getTextSize(z.name, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
+                                bx = max(10, mid_x - lw // 2)
+                                cv2.rectangle(display_frame, (bx - 3, mid_y - lh - 4), (bx + lw + 4, mid_y + 4), (15, 20, 25), -1)
+                                cv2.rectangle(display_frame, (bx - 3, mid_y - lh - 4), (bx + lw + 4, mid_y + 4), (0, 0, 255), 1)
+                                cv2.putText(display_frame, z.name, (bx, mid_y),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.42, (100, 150, 255), 1, cv2.LINE_AA)
                             except Exception:
                                 pass
 
@@ -511,13 +519,13 @@ def main():
                     x1, y1, x2, y2 = map(int, trk["bbox"])
                     if is_confirmed_breach:
                         color = (0, 0, 255)      # Red: Confirmed Intrusion Breach
-                        tag_prefix = "🚨"
+                        tag_prefix = "🚨 INTRUSION BREACH"
                     elif is_monitoring:
                         color = (0, 215, 255)    # Amber: Monitoring / Grace Period
-                        tag_prefix = "🟡"
+                        tag_prefix = "🟡 MONITORING"
                     else:
                         color = (0, 255, 0)      # Green: Authorized Target
-                        tag_prefix = "🟢"
+                        tag_prefix = "🟢 SECURE"
 
                     # Fix #18: draw bounding box and labels on display_frame, not on the YOLO input
                     cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
@@ -526,14 +534,20 @@ def main():
                     tag_label = f"{tag_prefix} #{trk['track_id']} | {posture_label.upper()} | {speed_label}"
                     if breach_reasons:
                         tag_label += f" | {breach_reasons[0]}"
-                    cv2.putText(display_frame, tag_label, (x1, max(16, y1 - 8)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.48, color, 2)
+                    (tw, th), baseline = cv2.getTextSize(tag_label, cv2.FONT_HERSHEY_SIMPLEX, 0.46, 1)
+                    tag_y = max(th + 6, y1 - 8)
+                    cv2.rectangle(display_frame, (x1, tag_y - th - 4), (x1 + tw + 6, tag_y + baseline), (15, 20, 25), -1)
+                    cv2.rectangle(display_frame, (x1, tag_y - th - 4), (x1 + tw + 6, tag_y + baseline), color, 1)
+                    cv2.putText(display_frame, tag_label, (x1 + 3, tag_y - 2),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.46, color, 1, cv2.LINE_AA)
 
                     new_alarm = next((e for e in frame_events if e['track_id'] == tid and
                                       e['event'] in ('LOITER', 'CROSS_IN', 'CROSS_OUT', 'SPEED_START', 'ACTION_START')), None)
                     if new_alarm is not None:
                         ih, iw = frame.shape[:2]
-                        cx1, cy1, cx2, cy2 = max(0, x1), max(0, y1), min(iw, x2), min(ih, y2)
+                        pad_w = int((x2 - x1) * 0.1)
+                        pad_h = int((y2 - y1) * 0.1)
+                        cx1, cy1, cx2, cy2 = max(0, x1 - pad_w), max(0, y1 - pad_h), min(iw, x2 + pad_w), min(ih, y2 + pad_h)
                         if cx2 > cx1 and cy2 > cy1:
                             st.session_state.evidence_locker.append({
                                 'ts': now_ts, 'time_str': time.strftime('%H:%M:%S'), 'track_id': tid,
@@ -559,7 +573,7 @@ def main():
                 metric_conf.metric("Vision Architecture", "YOLOv8-Pose" if use_pose else "YOLOv8-Nano", f"Infer: {infer_ms:.1f}ms")
                 metric_fps.metric("Processing Speed", f"{fps:.1f} FPS", f"Track: {track_ms:.1f}ms")
                 metric_tracks.metric("Active Targets", f"{len(active_tracks)}", f"{len(active_tracks)} in camera frame")
-                metric_breaches.metric("Intrusion Breaches", f"{breach_count}", "ALARM ACTIVE" if breach_count > 0 else "Secure")
+                metric_breaches.metric("Intrusion Breaches", f"{breach_count}", "🚨 ALARM ACTIVE" if breach_count > 0 else "Secure")
 
                 status_text.info(f"⚡ Pipeline FPS: **{fps:.1f}** | Inference: **{infer_ms:.1f}ms** | Tracking: **{track_ms:.1f}ms** | Active Targets: **{len(active_tracks)}** | Breaches: **{breach_count}** | Feed: **{feed_option}**")
 

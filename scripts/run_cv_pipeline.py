@@ -13,7 +13,7 @@ import numpy as np
 
 from ultralytics import YOLO
 from cv_core.geometry.homography import HomographyTransformer
-from cv_core.geometry.zones_3d import MetricZone3D
+from cv_core.geometry.zones_3d import MetricZone3D, get_default_zones
 from cv_core.tracking.tracker import MultiTargetTracker
 from cv_core.visualizer.bev_radar import BEVRadarRenderer
 from cv_core.kinetics.pose_classifier import PoseKineticClassifier
@@ -41,11 +41,8 @@ def run_cv_engine(
     pose_classifier = PoseKineticClassifier()
     radar = BEVRadarRenderer(radar_size=480, world_extent_m=20.0, grid_step_m=2.0)
 
-    # Example Metric Ground Zones (in meters)
-    ground_zones = [
-        MetricZone3D("z1", "RESTRICTED VAULT", "polygon", [(3.5, 1.2), (7.5, 1.2), (7.5, 2.8), (3.5, 2.8)]),
-        MetricZone3D("tw1", "PERIMETER FENCE", "tripwire", [(2.0, 2.2), (8.0, 2.2)])
-    ]
+    # Metric Ground Zones calibrated in real-world metric space (meters)
+    ground_zones = get_default_zones(video_source)
 
     # Open Video Capture
     cap_src = int(video_source) if str(video_source).isdigit() else video_source
@@ -114,6 +111,46 @@ def run_cv_engine(
             # 3. Zone Breaches & Pose Kinetics
             alarm_states, _ = monitor.update(active_tracks, ground_zones, elapsed_dt)
             radar_tracks = []
+            display_frame = frame.copy()
+
+            # Render Ground Zones on Perspective View
+            if transformer.is_calibrated:
+                poly_overlay = display_frame.copy()
+                has_polys = False
+                for z in ground_zones:
+                    if z.zone_type == "polygon":
+                        try:
+                            pts = [transformer.world_to_image(x, y) for x, y in z.world_coords]
+                            pts_np = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+                            cv2.fillPoly(poly_overlay, [pts_np], (0, 140, 255))
+                            has_polys = True
+                        except Exception:
+                            pass
+                if has_polys:
+                    cv2.addWeighted(poly_overlay, 0.30, display_frame, 0.70, 0, display_frame)
+
+                for z in ground_zones:
+                    if z.zone_type == "polygon":
+                        try:
+                            pts = [transformer.world_to_image(x, y) for x, y in z.world_coords]
+                            pts_np = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+                            cv2.polylines(display_frame, [pts_np], True, (0, 185, 255), 2, cv2.LINE_AA)
+                            lbl_x = int(min(p[0] for p in pts)) + 8
+                            lbl_y = int(min(p[1] for p in pts)) + 20
+                            cv2.putText(display_frame, z.name, (lbl_x, lbl_y), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 215, 255), 1, cv2.LINE_AA)
+                        except Exception:
+                            pass
+                    elif z.zone_type == "tripwire":
+                        try:
+                            p1 = transformer.world_to_image(*z.world_coords[0])
+                            p2 = transformer.world_to_image(*z.world_coords[1])
+                            ip1 = (int(p1[0]), int(p1[1]))
+                            ip2 = (int(p2[0]), int(p2[1]))
+                            cv2.line(display_frame, ip1, ip2, (0, 0, 255), 2, cv2.LINE_AA)
+                            cv2.putText(display_frame, z.name, (ip1[0] + 10, ip1[1] - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 0, 255), 1, cv2.LINE_AA)
+                        except Exception:
+                            pass
+
             for trk in active_tracks:
                 w_pos = trk.get("world_pos")
                 is_breaching = alarm_states[trk['track_id']]['is_breaching']
@@ -132,9 +169,10 @@ def run_cv_engine(
                 # Annotate perspective frame
                 x1, y1, x2, y2 = map(int, trk["bbox"])
                 box_color = (0, 0, 255) if is_breaching else (0, 230, 255)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
-                tag = f"#{trk['track_id']} | " + (f"{speed_kmh:.1f} km/h" if w_pos is not None else "speed unavailable")
-                cv2.putText(frame, tag, (x1, max(18, y1 - 8)),
+                cv2.rectangle(display_frame, (x1, y1), (x2, y2), box_color, 2)
+                prefix = "🚨 " if is_breaching else ""
+                tag = f"{prefix}#{trk['track_id']} | " + (f"{speed_kmh:.1f} km/h" if w_pos is not None else "speed unavailable")
+                cv2.putText(display_frame, tag, (x1, max(18, y1 - 8)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.55, box_color, 2, cv2.LINE_AA)
 
             # 4. Render BEV Ground Radar Display
@@ -142,7 +180,7 @@ def run_cv_engine(
                                         title="GROUND RADAR" if transformer.is_calibrated else "UNCALIBRATED - METRIC ALARMS DISABLED")
 
             # 5. Composite Dual-View (Perspective + Radar)
-            dual_view = BEVRadarRenderer.create_dual_view(frame, radar_canvas)
+            dual_view = BEVRadarRenderer.create_dual_view(display_frame, radar_canvas)
 
             # Initialize writer lazily with exact matching dual-view dimensions
             if output_video and writer is None:
