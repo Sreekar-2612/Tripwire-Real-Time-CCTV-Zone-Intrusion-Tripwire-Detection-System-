@@ -25,25 +25,12 @@
 
 ## 2. Screenshot-by-Screenshot Audit Breakdown
 
-### Image 1: File Uploader "uploadpload" Double-Text Collision Fix
-- **Root Cause Analysis:** In Streamlit's native `div[data-testid="stFileUploader"] section`, default flex-direction row in the compact sidebar constrained the action button and dropzone instructions to adjacent inline positions. When custom font sizes and button wrappers were applied, the button label ("Upload" / "Browse files") collided with the instruction text ("Drag and drop files to upload"), rendering as an overlapping `uploadpload` text artifact.
+### Image 1: File Uploader "uploadpload" Ligature Collision Fix
+- **Root Cause Analysis:** In Streamlit's native `FileUploader.js`, the upload button renders a Material Symbols icon `<span data-testid="stIconMaterial">upload</span>` alongside the button label `<span>Upload</span>`. When global CSS enforced `span { font-family: Arial !important; }`, the browser bypassed the `Material Symbols Rounded` icon ligature, causing the word `"upload"` to render in literal Arial text inside the button next to `"Upload"`, creating the overlapping text artifact `uploadpload`.
 - **Architectural Solution Implemented:**
-  - Standardized dropzone container:
-    ```css
-    border: 1.5px dashed rgba(37, 99, 235, 0.35) !important;
-    background: rgba(255, 255, 255, 0.75) !important;
-    backdrop-filter: blur(20px) !important;
-    border-radius: 16px !important;
-    padding: 14px !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    justify-content: center !important;
-    gap: 10px !important;
-    text-align: center !important;
-    ```
-  - Standardized dark secondary button with white text (`#0f172a`), `white-space: nowrap !important`, and `border-radius: 10px`.
-  - Structured dropzone instructions into a dedicated column below the button with explicit margins and centered text alignment, preventing any possibility of text collision.
+  - Preserved the `Material Symbols Rounded` font mapping globally for `[data-testid="stIconMaterial"]`.
+  - In `div[data-testid="stFileUploader"] section button`, explicitly suppressed the duplicate icon span (`[data-testid="stIconMaterial"] { display: none !important; }`), ensuring only the clean button text (`Upload` / `Browse files`) is displayed with generous padding and centered alignment.
+  - Standardized the dropzone with a 1.5px dashed border (`rgba(37, 99, 235, 0.35)`), frosted glass background (`rgba(255, 255, 255, 0.8)`), and separate column-stacked instruction text.
 
 ### Image 2: Sidebar Header Clutter & Multi-Line Wrapping Elimination
 - **Root Cause Analysis:** Section headings with numerical prefixes such as `<span class="sec-num">02 //</span> SPATIAL GEOMETRY & CALIBRATION` lacked `white-space: nowrap` and exceeded the sidebar column width, causing the prefix `02` to sit on line 1, `//` to break to line 2, and the title to wrap to line 3.
@@ -100,7 +87,7 @@
     ```
   - **Metric Values:** Styled in bold Hosta at `26px` with deep obsidian `#0f172a`.
   - **Metric Card Hover Lift:** Elevated with `transform: translateY(-4px) scale(1.01)` and deep glass shadow `0 25px 50px rgba(0, 0, 0, 0.08)`.
-  - **Warning Alert Banner Overhaul:** Replaced washed-out yellow with high-contrast frosted glass container (`rgba(255, 255, 255, 0.92)`), deep slate text `#0f172a`, and crisp amber left accent border (`#f59e0b`).
+  - **Warning Alert Banner Overhaul (Single Clean Layer, No Nested Boxes):** Replaced default washed-out yellow and prevented double-bordered nested containers by styling only the top-level `div[data-testid="stAlert"]` as a single frosted glass container (`rgba(255, 255, 255, 0.96)`), with deep slate text `#0f172a`, and a crisp amber left accent border (`#f59e0b`). Explicitly reset all inner nested wrappers (`stAlertContainer`, `stAlertContentWarning`) to `border: none; background: transparent; padding: 0;`, completely eliminating nested or overlapping box artifacts.
   - **Site-Wide Motion:** Animated 3D background glass spheres (`@keyframes floatSpheres` and `@keyframes floatSpheresGrid`) and universal transitions (`cubic-bezier(0.16, 1, 0.3, 1)`).
 
 ---
