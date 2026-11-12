@@ -324,17 +324,17 @@ def generate_flagship_video():
 
         # -------------------------------------------------------------
         # Target #2: Perimeter Intruder (🚨 INTRUSION BREACH)
-        # Walking forward across Checkpoint Tripwire at Y=5.5m (X in [4.0, 8.0])
+        # Walking forward across Checkpoint Tripwire at Y=2.3m (X in [3.5, 7.5])
         # Active: Frames 10 to 120 (t = 0.5s to 6.0s)
-        # Traverses X=5.20m, Y: 6.60m -> 4.20m over 110 frames (5.5s)
-        # Crosses Y=5.5m cleanly at Frame 60 (t = 3.0s)
+        # Traverses X=5.20m, Y: 4.20m -> 2.00m over 110 frames (5.5s)
+        # Crosses Y=2.30m cleanly around Frame 90
         # -------------------------------------------------------------
         if 10 <= f_idx <= 120:
             rel_f2 = f_idx - 10
             effective_f2 = max(0, rel_f2 - 4)
             step2 = effective_f2 / 106.0
             w2_x = 5.20
-            w2_y = 6.60 - step2 * (6.60 - 4.20)
+            w2_y = 4.20 - step2 * (4.20 - 2.00)
             u2, v2 = transformer.world_to_image(w2_x, w2_y)
             h2 = get_pixel_h(w2_y)
             crop2 = c_intruder[rel_f2 % len(c_intruder)]

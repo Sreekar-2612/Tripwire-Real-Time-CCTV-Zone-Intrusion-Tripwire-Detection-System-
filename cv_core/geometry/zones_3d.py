@@ -140,8 +140,8 @@ def get_default_zones(source: Optional[Any] = None, preset: str = "realistic") -
     feed_str = str(source or "").lower()
     if "flagship" in feed_str or "benchmark" in feed_str or "multi_threat" in feed_str:
         return [
-            MetricZone3D("z_vault", "RESTRICTED VAULT", "polygon", [(6.0, 3.5), (9.0, 3.5), (9.0, 7.0), (6.0, 7.0)]),
-            MetricZone3D("tw_chk", "CHECKPOINT TRIPWIRE", "tripwire", [(4.0, 5.5), (8.0, 5.5)])
+            MetricZone3D("z_vault", "RESTRICTED VAULT", "polygon", [(5.6, 2.0), (8.5, 2.0), (8.5, 6.5), (5.6, 6.5)]),
+            MetricZone3D("tw_chk", "CHECKPOINT TRIPWIRE", "tripwire", [(3.5, 2.3), (7.5, 2.3)])
         ]
     elif "pedestrian" in feed_str or "solutions_ci" in feed_str:
         return [

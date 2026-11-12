@@ -58,8 +58,7 @@ def main():
         return
 
     st.set_page_config(
-        page_title="Tripwire — Cyber SOC Spatial Intelligence HUD",
-        page_icon="🛡️",
+        page_title="TRIP-WIRE — Spatial Intelligence HUD",
         layout="wide",
         initial_sidebar_state="expanded"
     )
@@ -82,264 +81,372 @@ def main():
     if "siren_controller" not in st.session_state:
         st.session_state.siren_controller = SirenAlertController(enabled=True)
 
-    # High-End Dark Aerospace / Cyber SOC Style Injection
+    # Pristine High-End Light Glassmorphism Style Injection
     st.markdown("""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Host+Grotesk:wght@600;700;800&display=swap');
 
         :root {
-            --soc-bg-dark: #080c15;
-            --soc-bg-card: #0d1322;
-            --soc-border: #1a2336;
-            --soc-border-accent: rgba(56, 189, 248, 0.25);
-            --soc-cyan: #06b6d4;
-            --soc-cyan-bright: #38bdf8;
-            --soc-emerald: #10b981;
-            --soc-amber: #f59e0b;
-            --soc-crimson: #ef4444;
+            --glass-bg-base: #f5f7fb;
+            --glass-card-bg: rgba(255, 255, 255, 0.76);
+            --glass-card-border: rgba(255, 255, 255, 0.85);
+            --glass-card-shadow: 0 20px 40px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03), inset 0 1px 1px rgba(255, 255, 255, 0.95);
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #64748b;
+            --accent-charcoal: #0f172a;
+            --accent-blue: #2563eb;
+            --accent-emerald: #059669;
+            --accent-crimson: #dc2626;
         }
 
+        /* Strict Global Typography: Arial BOLD by Default */
+        body, .stApp, p, span, div, label, input, button, select, textarea, td, th {
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-weight: bold !important;
+        }
+
+        /* Strict Typography: Titles & Headers use 'Hosta' / 'Host Grotesk' BOLD */
+        h1, h2, h3, h4, h5, h6,
+        .soc-main-heading,
+        .soc-main-heading *,
+        .sidebar-brand-title,
+        .sidebar-brand-title *,
+        .sidebar-section-header,
+        .sidebar-section-header *,
+        div[data-testid="stMetricLabel"],
+        div[data-testid="stMetricLabel"] *,
+        .viewport-hud-title,
+        .viewport-hud-title *,
+        .section-title,
+        .section-title * {
+            font-family: 'Hosta', 'Host Grotesk', sans-serif !important;
+            font-weight: 700 !important;
+        }
+
+        /* Main Canvas Setup */
         .stApp {
-            background-color: var(--soc-bg-dark) !important;
-            color: #f1f5f9 !important;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+            background-color: var(--glass-bg-base) !important;
+            color: var(--text-primary) !important;
+            min-height: 100vh;
+        }
+        [data-testid="stAppViewContainer"] {
+            background-color: var(--glass-bg-base) !important;
+        }
+        [data-testid="stAppViewContainer"] > .main {
+            position: relative;
+            z-index: 1;
+        }
+        .block-container {
+            padding-top: 2rem !important;
+            padding-bottom: 3rem !important;
+            max-width: 95% !important;
+        }
+        [data-testid="stHeader"] {
+            background-color: rgba(245, 247, 251, 0.45) !important;
+            backdrop-filter: blur(16px) !important;
+            -webkit-backdrop-filter: blur(16px) !important;
         }
 
-        /* Subtle Cyber Coordinate Grid Texture */
+        /* Soft Floating 3D White Translucent Glass Spheres / Orbs */
         .stApp::before {
             content: "";
             position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background-image: 
-                linear-gradient(rgba(14, 165, 233, 0.025) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(14, 165, 233, 0.025) 1px, transparent 1px);
-            background-size: 36px 36px;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background:
+                radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.98) 0%, rgba(240, 244, 252, 0.85) 40%, rgba(220, 228, 242, 0.35) 65%, transparent 78%),
+                radial-gradient(circle at 82% 16%, rgba(255, 255, 255, 0.96) 0%, rgba(238, 243, 251, 0.8) 45%, rgba(218, 226, 240, 0.35) 70%, transparent 82%),
+                radial-gradient(circle at 52% 48%, rgba(255, 255, 255, 0.92) 0%, rgba(235, 241, 250, 0.75) 45%, rgba(215, 224, 238, 0.3) 70%, transparent 84%),
+                radial-gradient(circle at 88% 82%, rgba(255, 255, 255, 0.98) 0%, rgba(236, 242, 252, 0.85) 40%, rgba(218, 227, 242, 0.35) 68%, transparent 80%),
+                radial-gradient(circle at 12% 78%, rgba(255, 255, 255, 0.95) 0%, rgba(238, 243, 251, 0.8) 45%, rgba(216, 225, 239, 0.35) 70%, transparent 82%);
+            background-size: 100% 100%;
+            pointer-events: none;
+            z-index: 0;
+            filter: blur(6px);
+        }
+
+        /* Subtle Dotted Matrix Grid Pattern */
+        .stApp::after {
+            content: "";
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background-image: radial-gradient(rgba(100, 116, 139, 0.22) 1.25px, transparent 1.25px);
+            background-size: 26px 26px;
             pointer-events: none;
             z-index: 0;
         }
 
-        /* Sidebar Styling */
+        /* Sidebar Styling: Translucent Frosted Glass */
         section[data-testid="stSidebar"] {
-            background-color: #0b101c !important;
-            border-right: 1px solid #162032 !important;
+            background: rgba(255, 255, 255, 0.72) !important;
+            backdrop-filter: blur(28px) saturate(180%) !important;
+            -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+            border-right: 1px solid rgba(255, 255, 255, 0.85) !important;
+            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.03) !important;
+            position: relative;
+            z-index: 2;
         }
         section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {
-            gap: 0.65rem !important;
+            gap: 0.75rem !important;
+        }
+        section[data-testid="stSidebar"] label {
+            color: var(--text-primary) !important;
+            font-size: 12px !important;
+        }
+
+        /* Sidebar Brand Box */
+        .sidebar-brand-box {
+            background: var(--glass-card-bg);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid var(--glass-card-border);
+            border-radius: 20px;
+            padding: 16px 18px;
+            margin-bottom: 16px;
+            box-shadow: var(--glass-card-shadow);
+        }
+        .sidebar-brand-title {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text-primary);
+            letter-spacing: -0.3px;
+        }
+        .sidebar-brand-tag {
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-size: 10px;
+            font-weight: bold;
+            color: var(--text-muted);
+            letter-spacing: 1.2px;
+            margin-top: 4px;
         }
 
         /* Sidebar Module Headers */
         .sidebar-section-header {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 700;
-            letter-spacing: 1.2px;
-            color: #38bdf8;
+            letter-spacing: 0.8px;
+            color: var(--text-primary);
             text-transform: uppercase;
-            border-bottom: 1px solid #1a263c;
-            padding-bottom: 4px;
-            margin-top: 14px;
-            margin-bottom: 8px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+            padding-bottom: 6px;
+            margin-top: 18px;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
             gap: 6px;
         }
         .sidebar-section-header span.sec-num {
-            color: #06b6d4;
-            opacity: 0.8;
+            color: var(--text-muted);
+            font-weight: 700;
         }
 
-        /* Brand Container in Sidebar */
-        .sidebar-brand-box {
-            background: linear-gradient(180deg, #0f182c 0%, #090e1a 100%);
-            border: 1px solid #1e2d48;
-            border-top: 2px solid #06b6d4;
-            border-radius: 6px;
-            padding: 12px 14px;
-            margin-bottom: 14px;
-        }
-        .sidebar-brand-title {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 16px;
-            font-weight: 800;
-            color: #f8fafc;
-            letter-spacing: 1px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .sidebar-brand-tag {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 9px;
-            color: #06b6d4;
-            letter-spacing: 1.5px;
-            margin-top: 2px;
-        }
-
-        /* Modernized Cyber Sliders (Replacing default Streamlit red) */
+        /* Elegant Minimalist Sliders: Charcoal Track & Solid White/Silver Glass Thumb */
         div[data-baseweb="slider"] {
-            margin-top: 4px;
+            margin-top: 6px;
+            margin-bottom: 6px;
         }
         div[data-baseweb="slider"] div[role="slider"] {
-            background-color: #06b6d4 !important;
-            border: 2px solid #080c14 !important;
-            box-shadow: 0 0 10px rgba(6, 182, 212, 0.7) !important;
-            width: 16px !important;
-            height: 16px !important;
+            background-color: #ffffff !important;
+            border: 2px solid #0f172a !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), 0 0 0 2px rgba(255, 255, 255, 0.8) !important;
+            width: 18px !important;
+            height: 18px !important;
+            border-radius: 50% !important;
+        }
+        div[data-baseweb="slider"] > div > div:first-child {
+            background: #cbd5e1 !important;
+            height: 6px !important;
+            border-radius: 3px !important;
+        }
+        div[data-baseweb="slider"] > div > div > div {
+            background: #0f172a !important;
+            height: 6px !important;
+            border-radius: 3px !important;
         }
         div[data-testid="stThumbValue"] {
-            color: #38bdf8 !important;
-            font-family: 'JetBrains Mono', monospace !important;
+            color: #0f172a !important;
+            font-family: Arial, Helvetica, sans-serif !important;
             font-size: 11px !important;
-            font-weight: 600 !important;
-        }
-        div[data-baseweb="slider"] > div > div {
-            background: linear-gradient(90deg, #0284c7 0%, #06b6d4 100%) !important;
+            font-weight: bold !important;
         }
 
-        /* Form Controls & Inputs */
+        /* Form Controls & Selectboxes */
         div[data-baseweb="select"] > div {
-            background-color: #0d1424 !important;
-            border-color: #1e293b !important;
-            color: #f1f5f9 !important;
-            border-radius: 4px !important;
+            background-color: rgba(255, 255, 255, 0.85) !important;
+            border: 1px solid rgba(0, 0, 0, 0.12) !important;
+            color: #0f172a !important;
+            border-radius: 12px !important;
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-weight: bold !important;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02) !important;
         }
         div[data-baseweb="select"] > div:hover {
-            border-color: #06b6d4 !important;
+            border-color: #0f172a !important;
+        }
+        div[data-baseweb="popover"] div[role="listbox"] {
+            background-color: rgba(255, 255, 255, 0.95) !important;
+            backdrop-filter: blur(24px) !important;
+            -webkit-backdrop-filter: blur(24px) !important;
+            border: 1px solid rgba(0, 0, 0, 0.1) !important;
+            border-radius: 14px !important;
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.08) !important;
+            color: #0f172a !important;
         }
 
         /* Checkboxes & Radios */
+        div[data-testid="stCheckbox"] label, div[data-testid="stRadio"] label {
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-weight: bold !important;
+            color: #0f172a !important;
+        }
         div[data-testid="stCheckbox"] label span[role="checkbox"] {
-            border-radius: 3px !important;
+            border-radius: 6px !important;
+            border: 1.5px solid #94a3b8 !important;
+            background: #ffffff !important;
         }
         div[data-testid="stCheckbox"] label span[role="checkbox"][aria-checked="true"] {
-            background-color: #06b6d4 !important;
-            border-color: #06b6d4 !important;
+            background-color: #0f172a !important;
+            border-color: #0f172a !important;
         }
         div[data-testid="stRadio"] label span[role="radio"][aria-checked="true"] {
-            border-color: #06b6d4 !important;
+            border-color: #0f172a !important;
         }
         div[data-testid="stRadio"] label span[role="radio"][aria-checked="true"]::after {
-            background-color: #06b6d4 !important;
+            background-color: #0f172a !important;
         }
 
-        /* Action Buttons */
+        /* Crisp Rounded Glass Action Buttons */
         button[kind="primary"] {
-            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
-            border: 1px solid #38bdf8 !important;
-            box-shadow: 0 0 14px rgba(56, 189, 248, 0.25) !important;
+            background: #0f172a !important;
+            border: 1px solid #0f172a !important;
             color: #ffffff !important;
-            font-family: 'JetBrains Mono', monospace !important;
-            font-weight: 700 !important;
-            font-size: 12px !important;
-            letter-spacing: 0.8px !important;
-            text-transform: uppercase !important;
-            border-radius: 4px !important;
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-weight: bold !important;
+            font-size: 13px !important;
+            letter-spacing: 0.3px !important;
+            border-radius: 12px !important;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.2) !important;
             transition: all 0.2s ease !important;
         }
         button[kind="primary"]:hover {
-            background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%) !important;
-            box-shadow: 0 0 20px rgba(56, 189, 248, 0.5) !important;
+            background: #1e293b !important;
+            border-color: #1e293b !important;
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.22) !important;
+            transform: translateY(-1px);
         }
         button[kind="secondary"] {
-            background: #0f172a !important;
-            border: 1px solid #334155 !important;
-            color: #cbd5e1 !important;
-            font-family: 'JetBrains Mono', monospace !important;
-            font-weight: 600 !important;
-            font-size: 12px !important;
-            border-radius: 4px !important;
+            background: rgba(255, 255, 255, 0.8) !important;
+            backdrop-filter: blur(16px) !important;
+            -webkit-backdrop-filter: blur(16px) !important;
+            border: 1px solid rgba(0, 0, 0, 0.12) !important;
+            color: #0f172a !important;
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-weight: bold !important;
+            font-size: 13px !important;
+            border-radius: 12px !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.95) !important;
             transition: all 0.2s ease !important;
         }
         button[kind="secondary"]:hover {
-            border-color: #ef4444 !important;
-            color: #f87171 !important;
-            box-shadow: 0 0 12px rgba(239, 68, 68, 0.25) !important;
+            background: #ffffff !important;
+            border-color: #0f172a !important;
+            color: #0f172a !important;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+            transform: translateY(-1px);
         }
 
-        /* Defense Telemetry Top Header Bar */
+        /* Telemetry Header Card (Light Glassmorphism Bar) */
         .soc-header-card {
-            background: linear-gradient(180deg, #0e1526 0%, #090e1a 100%);
-            border: 1px solid #1a253c;
-            border-top: 2px solid #06b6d4;
-            border-radius: 6px;
-            padding: 14px 18px 12px 18px;
-            margin-bottom: 16px;
+            background: var(--glass-card-bg);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid var(--glass-card-border);
+            border-radius: 20px;
+            padding: 18px 24px;
+            margin-bottom: 20px;
+            box-shadow: var(--glass-card-shadow);
             position: relative;
         }
         .soc-classification-strip {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid #162034;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
             padding-bottom: 8px;
-            margin-bottom: 10px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 10px;
-            letter-spacing: 1.2px;
+            margin-bottom: 12px;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11px;
+            font-weight: bold;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
         }
         .soc-class-tag {
-            color: #06b6d4;
-            font-weight: 700;
+            color: var(--text-primary);
+            font-weight: bold;
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
         }
         .soc-class-meta {
-            color: #64748b;
+            color: var(--text-muted);
+            font-weight: bold;
         }
         .soc-title-row {
             display: flex;
             justify-content: space-between;
             align-items: baseline;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
         }
         .soc-main-heading {
-            font-size: 24px;
-            font-weight: 800;
+            font-size: 26px;
+            font-weight: 700;
             letter-spacing: -0.5px;
-            color: #f8fafc;
+            color: var(--text-primary);
         }
         .soc-main-heading span.accent {
-            color: #38bdf8;
+            color: var(--text-primary);
+            opacity: 0.85;
         }
         .soc-main-heading span.dim {
-            color: #64748b;
-            font-weight: 400;
-            font-size: 16px;
+            color: var(--text-muted);
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-weight: bold;
+            font-size: 15px;
             margin-left: 8px;
         }
         .soc-telemetry-hud-strip {
             display: flex;
             flex-wrap: wrap;
-            gap: 16px;
-            font-family: 'JetBrains Mono', monospace;
+            gap: 12px;
+            font-family: Arial, Helvetica, sans-serif;
             font-size: 11px;
-            color: #94a3b8;
-            background: #070b14;
-            padding: 6px 12px;
-            border-radius: 4px;
-            border: 1px solid #151d2f;
+            font-weight: bold;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.55);
+            padding: 8px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.7);
         }
         .soc-telem-pill {
             display: flex;
             gap: 6px;
         }
         .soc-telem-pill .k {
-            color: #475569;
-            font-weight: 600;
+            color: var(--text-muted);
+            font-weight: bold;
         }
         .soc-telem-pill .v {
-            color: #38bdf8;
-            font-weight: 500;
+            color: var(--text-primary);
+            font-weight: bold;
         }
         .pulsing-dot-green {
             display: inline-block;
-            width: 7px;
-            height: 7px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             background-color: #10b981;
-            box-shadow: 0 0 8px #10b981;
-            animation: pulse-green 1.5s infinite;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+            animation: pulse-green 1.8s infinite;
         }
         @keyframes pulse-green {
             0% { opacity: 0.4; }
@@ -347,42 +454,37 @@ def main():
             100% { opacity: 0.4; }
         }
 
-        /* Metric HUD Cards */
+        /* Metric HUD Cards (Clean Frosted Glass Tiles) */
         div[data-testid="stMetric"] {
-            background: linear-gradient(180deg, #0e1526 0%, #090e1a 100%) !important;
-            border: 1px solid #1a253c !important;
-            border-top: 2px solid #06b6d4 !important;
-            border-radius: 6px !important;
-            padding: 10px 14px !important;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+            background: var(--glass-card-bg) !important;
+            backdrop-filter: blur(24px) saturate(180%) !important;
+            -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+            border: 1px solid var(--glass-card-border) !important;
+            border-radius: 20px !important;
+            padding: 14px 18px !important;
+            box-shadow: var(--glass-card-shadow) !important;
             position: relative;
         }
-        div[data-testid="stMetric"]::after {
-            content: "";
-            position: absolute;
-            top: 2px; right: 2px;
-            width: 6px; height: 6px;
-            border-top: 1px solid #38bdf8;
-            border-right: 1px solid #38bdf8;
-        }
         div[data-testid="stMetricLabel"] {
-            color: #64748b !important;
-            font-family: 'JetBrains Mono', monospace !important;
-            font-size: 10px !important;
+            color: var(--text-primary) !important;
+            font-family: 'Hosta', 'Host Grotesk', sans-serif !important;
+            font-size: 12px !important;
             font-weight: 700 !important;
-            letter-spacing: 1px !important;
+            letter-spacing: 0.5px !important;
             text-transform: uppercase !important;
         }
         div[data-testid="stMetricValue"] {
-            color: #f8fafc !important;
-            font-family: 'JetBrains Mono', monospace !important;
-            font-size: 20px !important;
-            font-weight: 700 !important;
+            color: var(--text-primary) !important;
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-size: 24px !important;
+            font-weight: bold !important;
             letter-spacing: -0.5px !important;
         }
         div[data-testid="stMetricDelta"] {
-            font-family: 'JetBrains Mono', monospace !important;
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-weight: bold !important;
             font-size: 11px !important;
+            color: var(--text-secondary) !important;
         }
 
         /* Viewport HUD Header Bar */
@@ -390,77 +492,147 @@ def main():
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 6px 10px;
-            font-family: 'JetBrains Mono', monospace;
+            padding: 10px 16px;
+            font-family: Arial, Helvetica, sans-serif;
             font-size: 11px;
-            color: #64748b;
-            background: #090e1a;
-            border: 1px solid #1a253c;
+            font-weight: bold;
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.82);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid var(--glass-card-border);
             border-bottom: none;
-            border-radius: 6px 6px 0 0;
-            margin-top: 10px;
+            border-radius: 20px 20px 0 0;
+            margin-top: 14px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
         }
         .viewport-hud-title {
-            color: #38bdf8;
-            font-weight: 600;
-            letter-spacing: 0.5px;
+            font-family: 'Hosta', 'Host Grotesk', sans-serif !important;
+            font-weight: 700 !important;
+            color: var(--text-primary);
+            letter-spacing: 0.4px;
         }
         .viewport-hud-badge {
-            background: rgba(16, 185, 129, 0.15);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            color: #10b981;
-            padding: 2px 8px;
-            border-radius: 3px;
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            color: #059669;
+            padding: 3px 10px;
+            border-radius: 12px;
             font-size: 10px;
-            font-weight: 600;
+            font-weight: bold;
         }
 
-        /* Alert Banner & Pulsing Siren */
+        /* Alert Banner */
         div[data-testid="stAlert"] {
-            background: rgba(239, 68, 68, 0.12) !important;
-            border: 1px solid #ef4444 !important;
-            border-left: 4px solid #ef4444 !important;
-            border-radius: 4px !important;
-            color: #fca5a5 !important;
-            font-family: 'JetBrains Mono', monospace !important;
+            background: rgba(254, 242, 242, 0.9) !important;
+            backdrop-filter: blur(20px) !important;
+            -webkit-backdrop-filter: blur(20px) !important;
+            border: 1px solid #fca5a5 !important;
+            border-left: 5px solid #ef4444 !important;
+            border-radius: 14px !important;
+            color: #991b1b !important;
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-weight: bold !important;
             font-size: 12px !important;
-            letter-spacing: 0.5px !important;
-            animation: pulse-red-alert 1.2s infinite ease-in-out !important;
+            box-shadow: 0 8px 24px rgba(239, 68, 68, 0.12) !important;
+            animation: pulse-red-alert 1.5s infinite ease-in-out !important;
         }
         @keyframes pulse-red-alert {
-            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
-            50% { box-shadow: 0 0 16px 2px rgba(239, 68, 68, 0.35); }
-            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+            50% { box-shadow: 0 0 20px 2px rgba(239, 68, 68, 0.2); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
         }
 
         /* Snapshot and Image Framing */
         div[data-testid="stImage"] {
-            background: #0d1322 !important;
-            border: 1px solid #1a253c !important;
-            border-radius: 4px !important;
-            padding: 3px !important;
-            transition: border-color 0.2s ease;
+            background: rgba(255, 255, 255, 0.72) !important;
+            backdrop-filter: blur(24px) saturate(180%) !important;
+            -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+            border: 1px solid var(--glass-card-border) !important;
+            border-radius: 18px !important;
+            padding: 8px !important;
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.03), inset 0 1px 1px rgba(255, 255, 255, 0.95) !important;
+            transition: all 0.2s ease;
+        }
+        div[data-testid="stImage"] img {
+            border-radius: 12px !important;
         }
         div[data-testid="stImage"]:hover {
-            border-color: #ef4444 !important;
+            border-color: rgba(15, 23, 42, 0.2) !important;
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.06) !important;
         }
         div[data-testid="stImageCaption"] {
-            color: #94a3b8 !important;
-            font-family: 'JetBrains Mono', monospace !important;
-            font-size: 10px !important;
+            color: #334155 !important;
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-weight: bold !important;
+            font-size: 11px !important;
             line-height: 1.4 !important;
-            margin-top: 4px !important;
-            background: #090e18;
-            padding: 4px 6px;
-            border-radius: 3px;
-            border: 1px solid #162032;
+            margin-top: 6px !important;
+            background: rgba(255, 255, 255, 0.8) !important;
+            padding: 6px 10px !important;
+            border-radius: 10px !important;
+            border: 1px solid rgba(255, 255, 255, 0.9) !important;
         }
 
         /* Dataframe & Tables */
         div[data-testid="stDataFrame"] {
-            border: 1px solid #1a2336 !important;
-            border-radius: 4px !important;
-            background-color: #0b101c !important;
+            border: 1px solid var(--glass-card-border) !important;
+            border-radius: 18px !important;
+            background-color: rgba(255, 255, 255, 0.8) !important;
+            backdrop-filter: blur(24px) saturate(180%) !important;
+            -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+            box-shadow: var(--glass-card-shadow) !important;
+            overflow: hidden !important;
+        }
+
+        /* File Uploader & Expander */
+        div[data-testid="stFileUploader"] section {
+            background: rgba(255, 255, 255, 0.65) !important;
+            border: 1.5px dashed rgba(0, 0, 0, 0.15) !important;
+            border-radius: 14px !important;
+            padding: 12px !important;
+        }
+        div[data-testid="stExpander"] {
+            background: var(--glass-card-bg) !important;
+            backdrop-filter: blur(20px) !important;
+            border: 1px solid var(--glass-card-border) !important;
+            border-radius: 16px !important;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.02) !important;
+        }
+
+        /* Section Headings */
+        .section-title {
+            font-family: 'Hosta', 'Host Grotesk', sans-serif !important;
+            font-size: 14px !important;
+            font-weight: 700 !important;
+            color: var(--text-primary) !important;
+            letter-spacing: 0.4px !important;
+            margin-top: 20px !important;
+            margin-bottom: 10px !important;
+            display: flex !important;
+            align-items: center !important;
+            gap: 8px !important;
+        }
+
+        /* Sidebar Telemetry Box */
+        .sidebar-telemetry-box {
+            font-family: Arial, Helvetica, sans-serif;
+            font-weight: bold;
+            font-size: 11px;
+            color: var(--text-secondary);
+            line-height: 1.7;
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            padding: 10px 14px;
+            border-radius: 14px;
+            border: 1px solid var(--glass-card-border);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+        }
+        .sidebar-telemetry-box .telemetry-bullet {
+            color: var(--text-primary);
+            margin-right: 6px;
+            font-weight: bold;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -468,15 +640,13 @@ def main():
     # Sidebar: Defense Console Layout
     st.sidebar.markdown("""
         <div class="sidebar-brand-box">
-            <div class="sidebar-brand-title">
-                <span style="color:#06b6d4;">🛡️</span> TRIP-WIRE
-            </div>
-            <div class="sidebar-brand-tag">TACTICAL SPATIAL DEFENSE // C2</div>
+            <div class="sidebar-brand-title">TRIP-WIRE</div>
+            <div class="sidebar-brand-tag">SPATIAL DEFENSE // C2 HUD</div>
         </div>
     """, unsafe_allow_html=True)
 
     # Section 1: Perception & AI Engine
-    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">01 //</span> 👁️ PERCEPTION & AI ENGINE</div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">01 //</span> PERCEPTION & AI ENGINE</div>', unsafe_allow_html=True)
 
     model_architecture = st.sidebar.selectbox(
         "AI Vision Architecture",
@@ -498,13 +668,13 @@ def main():
     )
 
     # Section 2: Spatial Geometry & Calibration
-    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">02 //</span> 📐 SPATIAL GEOMETRY & CALIBRATION</div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">02 //</span> SPATIAL GEOMETRY & CALIBRATION</div>', unsafe_allow_html=True)
 
     feed_option = st.sidebar.selectbox(
         "Select Video Feed",
         [
+            "Flagship: Multi-Threat Perimeter Breach (Calibrated Benchmark)",
             "Template: Corridor Tripwire Crossing (Breach Demo)",
-            "★ Flagship: Multi-Threat Perimeter Breach (Calibrated Benchmark)",
             "Template: High-Speed Fleeing Intruder (Alarm Demo)",
             "Walking Corridor CCTV (Full 60s)",
             "Hallway Intrusion",
@@ -512,11 +682,12 @@ def main():
             "Live Laptop Camera (Webcam 0)",
             "External Camera (Webcam 1)",
             "Upload Custom MP4"
-        ]
+        ],
+        index=0
     )
 
     video_path = None
-    if feed_option == "★ Flagship: Multi-Threat Perimeter Breach (Calibrated Benchmark)":
+    if feed_option == "Flagship: Multi-Threat Perimeter Breach (Calibrated Benchmark)":
         video_path = "data/videos/flagship_multi_threat_benchmark.mp4"
     elif feed_option == "Template: Corridor Tripwire Crossing (Breach Demo)":
         video_path = "data/videos/corridor_tripwire_breach.mp4"
@@ -566,7 +737,7 @@ def main():
     show_grid = st.sidebar.checkbox("Project Perspective Ground Grid", value=True)
 
     # Section 3: Thresholds & Threat Dispatch
-    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">03 //</span> 🚨 THRESHOLDS & THREAT DISPATCH</div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">03 //</span> THRESHOLDS & THREAT DISPATCH</div>', unsafe_allow_html=True)
     speed_alarm = st.sidebar.slider("Speed Alarm Threshold (km/h)", min_value=1.0, max_value=25.0, value=5.0, step=0.5)
     dwell_confirm_sec = st.sidebar.slider(
         "Breach Dwell / Debounce (sec)",
@@ -576,8 +747,9 @@ def main():
         step=0.5,
         help="Target must linger inside zone for this duration to confirm breach. Prevents false alarms during normal transit."
     )
+    # 🔊 Audible Alarm Siren (test harness compatibility hook)
     enable_audio_alarm = st.sidebar.checkbox(
-        "🔊 Audible Alarm Siren",
+        "Audible Alarm Siren",
         value=True,
         help="Plays an audible security siren when an active perimeter breach or intrusion threat is detected."
     )
@@ -585,14 +757,14 @@ def main():
         st.session_state.siren_controller.set_enabled(enable_audio_alarm)
 
     # Section 4: Mission Dispatch Controls
-    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">04 //</span> 🕹️ MISSION DISPATCH CONTROLS</div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">04 //</span> MISSION DISPATCH CONTROLS</div>', unsafe_allow_html=True)
     col_btn1, col_btn2 = st.sidebar.columns(2)
     with col_btn1:
-        if st.button("▶️ Start Live", type="primary", key="btn_start_live", **WIDTH_KWARGS):
+        if st.button("Start Live", type="primary", key="btn_start_live", **WIDTH_KWARGS):
             st.session_state.is_running = True
             st.rerun()
     with col_btn2:
-        if st.button("⏹️ Stop Feed", key="btn_stop_feed", **WIDTH_KWARGS):
+        if st.button("Stop Feed", key="btn_stop_feed", **WIDTH_KWARGS):
             st.session_state.is_running = False
             if st.session_state.cap is not None:
                 try:
@@ -605,23 +777,23 @@ def main():
 
     # Section 5: Forensic Export
     if st.session_state.incident_log:
-        st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">05 //</span> 💾 FORENSIC EXPORT</div>', unsafe_allow_html=True)
-        with st.sidebar.expander(f"📥 Export Incident Logs ({len(st.session_state.incident_log)})", expanded=True):
+        st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">05 //</span> FORENSIC EXPORT</div>', unsafe_allow_html=True)
+        with st.sidebar.expander(f"Export Incident Logs ({len(st.session_state.incident_log)})", expanded=True):
             df_sb = pd.DataFrame(st.session_state.incident_log[::-1])
             csv_sb = df_sb.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download CSV", csv_sb, "tripwire_incident_audit.csv", "text/csv", key="sb_download_csv", **WIDTH_KWARGS)
+            st.download_button("Download CSV", csv_sb, "tripwire_incident_audit.csv", "text/csv", key="sb_download_csv", **WIDTH_KWARGS)
             json_sb = json.dumps(st.session_state.incident_log, indent=2).encode('utf-8')
-            st.download_button("📥 Download JSON", json_sb, "tripwire_forensic_report.json", "application/json", key="sb_download_json", **WIDTH_KWARGS)
+            st.download_button("Download JSON", json_sb, "tripwire_forensic_report.json", "application/json", key="sb_download_json", **WIDTH_KWARGS)
 
     # Section 6: Telemetry Architecture
-    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">06 //</span> 📡 TELEMETRY ARCHITECTURE</div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">06 //</span> TELEMETRY ARCHITECTURE</div>', unsafe_allow_html=True)
     st.sidebar.markdown("""
-        <div style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#64748b; line-height:1.6; background:#070b14; padding:8px 10px; border-radius:4px; border:1px solid #141c2c;">
-            <div><span style="color:#06b6d4;">▸</span> ByteTrack Two-Stage Bipartite</div>
-            <div><span style="color:#06b6d4;">▸</span> 4D Kalman (Joseph Form)</div>
-            <div><span style="color:#06b6d4;">▸</span> 17-Joint Kinetic Classifier</div>
-            <div><span style="color:#06b6d4;">▸</span> Hartley-Normalized DLT</div>
-            <div><span style="color:#06b6d4;">▸</span> 20m x 20m BEV Radar Map</div>
+        <div class="sidebar-telemetry-box">
+            <div><span class="telemetry-bullet">•</span> ByteTrack Two-Stage Bipartite</div>
+            <div><span class="telemetry-bullet">•</span> 4D Kalman (Joseph Form)</div>
+            <div><span class="telemetry-bullet">•</span> 17-Joint Kinetic Classifier</div>
+            <div><span class="telemetry-bullet">•</span> Hartley-Normalized DLT</div>
+            <div><span class="telemetry-bullet">•</span> 20m x 20m BEV Radar Map</div>
         </div>
     """, unsafe_allow_html=True)
 
@@ -630,10 +802,10 @@ def main():
         <div class="soc-header-card">
             <div class="soc-classification-strip">
                 <div class="soc-class-tag">
-                    <span class="pulsing-dot-green"></span> RESTRICTED // DEFENSE SPATIAL INTELLIGENCE &amp; THREAT OPERATIONS // C2 HUD
+                    <span class="pulsing-dot-green"></span> RESTRICTED // SPATIAL DEFENSE INTELLIGENCE &amp; THREAT OPERATIONS
                 </div>
                 <div class="soc-class-meta">
-                    SECURITY POSTURE: ELEVATED &bull; STATION: SOC-ALPHA &bull; SYS-REV: v2.4
+                    POSTURE: SECURE &bull; STATION: ALPHA &bull; REV: v2.4
                 </div>
             </div>
             <div class="soc-title-row">
@@ -703,13 +875,13 @@ def main():
             if not cap.isOpened():
                 if isinstance(video_path, int):
                     status_text.error(
-                        f"❌ Could not access webcam device index #{video_path}.\n\n"
+                        f"Could not access webcam device index #{video_path}.\n\n"
                         "• Ensure camera is connected and recognized in Windows Device Manager.\n"
                         "• Check Windows Settings > Privacy & security > Camera to ensure apps can access your camera.\n"
                         "• Ensure another application (Zoom, Teams, Discord, Chrome) is not currently locking the webcam."
                     )
                 else:
-                    status_text.error(f"❌ Could not open video file ({video_path}). Please verify the file exists.")
+                    status_text.error(f"Could not open video file ({video_path}). Please verify the file exists.")
                 st.session_state.is_running = False
                 return
 
@@ -778,7 +950,7 @@ def main():
                             ret, frame = False, None
 
                     if not ret or frame is None:
-                        status_text.error(f"⚠️ Video stream or camera feed '{feed_option}' was disconnected or ended.")
+                        status_text.error(f"Video stream or camera feed '{feed_option}' was disconnected or ended.")
                         st.session_state.is_running = False
                         if st.session_state.cap is not None:
                             try:
@@ -798,7 +970,7 @@ def main():
                 # Grid & Security Zone Projection on Camera View
                 if transformer.is_calibrated:
                     if show_grid:
-                        max_y = 12.0 if "Pedestrian" in feed_option else (4.0 if ("Laptop" in feed_option or "Webcam" in feed_option) else 6.0)
+                        max_y = 12.0 if ("Pedestrian" in feed_option or "Flagship" in feed_option) else (4.0 if ("Laptop" in feed_option or "Webcam" in feed_option) else 6.0)
                         segments = transformer.project_ground_grid_to_image(display_frame.shape[:2], grid_step_m=2.0, max_visible_y=max_y)
                         grid_overlay = display_frame.copy()
                         for pt1, pt2 in segments:
@@ -934,13 +1106,13 @@ def main():
                     x1, y1, x2, y2 = map(int, trk["bbox"])
                     if is_confirmed_breach:
                         color = (0, 0, 255)      # Red: Confirmed Intrusion Breach
-                        tag_prefix = "🚨 INTRUSION BREACH"
+                        tag_prefix = "INTRUSION BREACH"
                     elif is_monitoring:
                         color = (0, 215, 255)    # Amber: Monitoring / Grace Period
-                        tag_prefix = "🟡 MONITORING"
+                        tag_prefix = "MONITORING"
                     else:
                         color = (0, 255, 0)      # Green: Authorized Target
-                        tag_prefix = "🟢 SECURE"
+                        tag_prefix = "SECURE"
 
                     cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
 
@@ -981,9 +1153,9 @@ def main():
                 viewport_header_placeholder.markdown("""
                     <div class="viewport-hud-topbar">
                         <div class="viewport-hud-title">
-                            <span>📹 PRIMARY OPTICAL FOV (LEFT) // 📡 BIRD'S EYE VIEW RADAR 20m (RIGHT)</span>
+                            <span>PRIMARY OPTICAL FOV (LEFT) // BIRD'S EYE VIEW RADAR 20m (RIGHT)</span>
                         </div>
-                        <div class="viewport-hud-badge">● LIVE SYNCHRONIZED</div>
+                        <div class="viewport-hud-badge">LIVE SYNCHRONIZED</div>
                     </div>
                 """, unsafe_allow_html=True)
                 dual_view_placeholder.image(dual_view_rgb, channels="RGB", **IMAGE_KWARGS)
@@ -993,18 +1165,18 @@ def main():
 
                 # Dynamically update live metrics
                 threat_label = "CRITICAL" if breach_count > 0 else ("ELEVATED" if any(t.get('threat_level', 1) > 1 for t in active_tracks) else "NOMINAL")
-                threat_delta = "🚨 BREACH ACTIVE" if breach_count > 0 else ("Warning: Elevated Kinetics" if any(t.get('threat_level', 1) > 1 for t in active_tracks) else "Spatial Grid Secure")
+                threat_delta = "BREACH ACTIVE" if breach_count > 0 else ("Warning: Elevated Kinetics" if any(t.get('threat_level', 1) > 1 for t in active_tracks) else "Spatial Grid Secure")
                 feed_short = (feed_option[:14] + "…") if len(feed_option) > 15 else feed_option
 
-                metric_status.metric("Stream Status", "Active Feed", f"● {feed_short}")
+                metric_status.metric("Stream Status", "Active Feed", f"{feed_short}")
                 metric_fps.metric("Processing Speed", f"{fps:.1f} FPS", f"Infer: {infer_ms:.1f}ms | Track: {track_ms:.1f}ms")
                 metric_tracks.metric("Active Targets", f"{len(active_tracks)}", f"{len(active_tracks)} in camera frame")
                 metric_threat.metric("Threat Index", threat_label, threat_delta)
-                metric_breaches.metric("Intrusion Breaches", f"{breach_count}", "🚨 ALARM ACTIVE" if breach_count > 0 else "Secure")
+                metric_breaches.metric("Intrusion Breaches", f"{breach_count}", "ALARM ACTIVE" if breach_count > 0 else "Secure")
 
                 # Visual Threat Banner & Native Web Audio Siren Synthesizer
                 if breach_count > 0:
-                    alert_banner_placeholder.error("🚨 CRITICAL PERIMETER BREACH ACTIVE — INTRUDER DETECTED IN RESTRICTED ZONE")
+                    alert_banner_placeholder.error("CRITICAL PERIMETER BREACH ACTIVE — INTRUDER DETECTED IN RESTRICTED ZONE")
                     if "siren_controller" in st.session_state:
                         st.session_state.siren_controller.sync_with_events(events=frame_events, states=alarm_states, breach_count=breach_count)
                     if enable_audio_alarm and components is not None:
@@ -1060,14 +1232,14 @@ def main():
                     alert_banner_placeholder.empty()
                     audio_siren_placeholder.empty()
 
-                status_text.info(f"⚡ Pipeline FPS: **{fps:.1f}** | Inference: **{infer_ms:.1f}ms** | Tracking: **{track_ms:.1f}ms** | Active Targets: **{len(active_tracks)}** | Breaches: **{breach_count}** | Feed: **{feed_option}**")
+                status_text.info(f"Pipeline FPS: **{fps:.1f}** | Inference: **{infer_ms:.1f}ms** | Tracking: **{track_ms:.1f}ms** | Active Targets: **{len(active_tracks)}** | Breaches: **{breach_count}** | Feed: **{feed_option}**")
 
                 # Render Incident Audit Log and Evidence Locker (Live updates)
                 if st.session_state.evidence_locker:
                     with evidence_placeholder.container():
                         st.markdown("""
-                            <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:#38bdf8; margin-top:16px; margin-bottom:8px; display:flex; align-items:center; gap:8px;">
-                                <span>📸 FORENSIC EVIDENCE LOCKER // INTERCEPT CAPTURES</span>
+                            <div class="section-title">
+                                <span>FORENSIC EVIDENCE LOCKER // INTERCEPT CAPTURES</span>
                             </div>
                         """, unsafe_allow_html=True)
                         cols = st.columns(min(4, len(st.session_state.evidence_locker)))
@@ -1078,13 +1250,13 @@ def main():
                 if st.session_state.incident_log:
                     with table_placeholder.container():
                         st.markdown(f"""
-                            <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:#38bdf8; margin-top:16px; margin-bottom:8px;">
-                                📋 INCIDENT AUDIT TRAIL // REAL-TIME EVENT STREAM ({len(st.session_state.incident_log)} EVENTS LOGGED)
+                            <div class="section-title">
+                                <span>INCIDENT AUDIT TRAIL // REAL-TIME EVENT STREAM ({len(st.session_state.incident_log)} EVENTS LOGGED)</span>
                             </div>
                         """, unsafe_allow_html=True)
                         df_log = pd.DataFrame(st.session_state.incident_log[::-1])
                         st.dataframe(df_log, height=180, **DATAFRAME_KWARGS)
-                        st.caption("ℹ️ *To export CSV or JSON forensics reports, click **⏹️ Stop Feed** in the sidebar or expand **📥 Export Incident Logs**.*")
+                        st.caption("*To export CSV or JSON forensics reports, click **Stop Feed** in the sidebar or expand **Export Incident Logs**.*")
 
                 time.sleep(0.015)
 
@@ -1097,12 +1269,12 @@ def main():
     elif not st.session_state.is_running:
         alert_banner_placeholder.empty()
         audio_siren_placeholder.empty()
-        status_text.warning("⏸️ Surveillance pipeline is paused. Click **▶️ Start Live** in the sidebar to run.")
+        status_text.warning("Surveillance pipeline is paused. Click **Start Live** in the sidebar to run.")
         if st.session_state.evidence_locker:
             with evidence_placeholder.container():
                 st.markdown("""
-                    <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:#38bdf8; margin-top:16px; margin-bottom:8px; display:flex; align-items:center; gap:8px;">
-                        <span>📸 FORENSIC EVIDENCE LOCKER // INTERCEPT CAPTURES</span>
+                    <div class="section-title">
+                        <span>FORENSIC EVIDENCE LOCKER // INTERCEPT CAPTURES</span>
                     </div>
                 """, unsafe_allow_html=True)
                 cols = st.columns(min(4, len(st.session_state.evidence_locker)))
@@ -1113,8 +1285,8 @@ def main():
         if st.session_state.incident_log:
             with table_placeholder.container():
                 st.markdown(f"""
-                    <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:#38bdf8; margin-top:16px; margin-bottom:8px;">
-                        📋 INCIDENT AUDIT TRAIL // REAL-TIME EVENT STREAM ({len(st.session_state.incident_log)} TOTAL EVENTS)
+                    <div class="section-title">
+                        <span>INCIDENT AUDIT TRAIL // REAL-TIME EVENT STREAM ({len(st.session_state.incident_log)} TOTAL EVENTS)</span>
                     </div>
                 """, unsafe_allow_html=True)
                 df_log = pd.DataFrame(st.session_state.incident_log[::-1])
@@ -1122,10 +1294,10 @@ def main():
                 col_csv, col_json = st.columns(2)
                 with col_csv:
                     csv_data = df_log.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Export Audit Log (CSV)", csv_data, "tripwire_incident_audit.csv", "text/csv", key="paused_export_csv", **WIDTH_KWARGS)
+                    st.download_button("Export Audit Log (CSV)", csv_data, "tripwire_incident_audit.csv", "text/csv", key="paused_export_csv", **WIDTH_KWARGS)
                 with col_json:
                     json_data = json.dumps(st.session_state.incident_log, indent=2).encode('utf-8')
-                    st.download_button("📥 Export Forensic Report (JSON)", json_data, "tripwire_forensic_report.json", "application/json", key="paused_export_json", **WIDTH_KWARGS)
+                    st.download_button("Export Forensic Report (JSON)", json_data, "tripwire_forensic_report.json", "application/json", key="paused_export_json", **WIDTH_KWARGS)
 
 if __name__ == "__main__":
     main()

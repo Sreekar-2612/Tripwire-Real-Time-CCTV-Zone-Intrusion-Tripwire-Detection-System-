@@ -398,7 +398,7 @@ class HomographyTransformer:
                 if not calibration_file:
                     continue
             else:
-                if str(bound_source) != str(source):
+                if str(bound_source).replace('\\', '/') != str(source).replace('\\', '/'):
                     if calibration_file:
                         raise ValueError('Calibration source does not match the selected feed')
                     continue

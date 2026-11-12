@@ -216,7 +216,7 @@ def run_cv_engine(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tripwire CV Pipeline Runner")
-    parser.add_argument("--source", type=str, required=True, help="Path to video file or webcam index (e.g. 0)")
+    parser.add_argument("--source", type=str, default="data/videos/flagship_multi_threat_benchmark.mp4", help="Path to video file or webcam index (default: data/videos/flagship_multi_threat_benchmark.mp4)")
     parser.add_argument("--calibration", type=str, default=None, help="Path to calibration.json")
     parser.add_argument("--output", type=str, default=None, help="Path to save dual-view output MP4")
     parser.add_argument("--no-preview", action="store_true", help="Disable GUI preview window")

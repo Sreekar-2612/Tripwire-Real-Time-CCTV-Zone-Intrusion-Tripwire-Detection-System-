@@ -34,12 +34,12 @@ class TripwireInteractiveDemo:
     """
     def __init__(self):
         self.videos = {
-            "1": "data/videos/corridor_tripwire_breach.mp4",
-            "2": "data/videos/high_speed_fleeing_breach.mp4",
-            "3": "data/videos/walking_cctv.mp4",
-            "4": "data/videos/cctv_sample.mp4",
-            "5": "data/videos/solutions_ci_demo.mp4",
-            "6": "data/videos/flagship_multi_threat_benchmark.mp4",
+            "1": "data/videos/flagship_multi_threat_benchmark.mp4",
+            "2": "data/videos/corridor_tripwire_breach.mp4",
+            "3": "data/videos/high_speed_fleeing_breach.mp4",
+            "4": "data/videos/walking_cctv.mp4",
+            "5": "data/videos/cctv_sample.mp4",
+            "6": "data/videos/solutions_ci_demo.mp4",
             "0": "0"  # Webcam
         }
         self.current_video_key = "1"
@@ -304,7 +304,7 @@ class TripwireInteractiveDemo:
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
 
                 audio_status = "ON" if getattr(self, "audio_alarm_enabled", True) else "MUTED"
-                controls_str = f"[1-5/0] Switch Video | [SPACE] Pause | [G] Grid | [M] Audio: {audio_status} | [S] Snapshot | [Q] Quit"
+                controls_str = f"[1-6/0] Switch Video | [SPACE] Pause | [G] Grid | [M] Audio: {audio_status} | [S] Snapshot | [Q] Quit"
                 (cw, _), _ = cv2.getTextSize(controls_str, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
                 cv2.putText(dual_view, controls_str, (dw - cw - 16, 26),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.42, (160, 180, 200), 1, cv2.LINE_AA)
