@@ -106,6 +106,14 @@ def main():
             font-weight: bold !important;
         }
 
+        /* Material Symbols Icons must preserve their icon font ligature mapping */
+        [data-testid="stIconMaterial"],
+        .material-symbols-rounded,
+        [class*="material-symbols"] {
+            font-family: 'Material Symbols Rounded', sans-serif !important;
+            font-weight: normal !important;
+        }
+
         /* Strict Typography: Titles & Headers use 'Hosta' / 'Host Grotesk' BOLD */
         h1, h2, h3, h4, h5, h6,
         .soc-main-heading,
@@ -643,65 +651,74 @@ def main():
             font-weight: bold;
         }
 
-        /* Frosted Glass Base Alert Container */
+        /* Frosted Glass Single-Layer Alert Container (No Nested Or Overlapping Boxes) */
         div[data-testid="stAlert"] {
-            background: rgba(255, 255, 255, 0.92) !important;
+            background: rgba(255, 255, 255, 0.95) !important;
             backdrop-filter: blur(28px) saturate(190%) !important;
             -webkit-backdrop-filter: blur(28px) saturate(190%) !important;
-            border: 1.5px solid rgba(226, 232, 240, 0.9) !important;
+            border: 1px solid rgba(226, 232, 240, 0.9) !important;
+            border-left: 6px solid #2563eb !important;
             border-radius: 16px !important;
             color: #0f172a !important;
             font-family: Arial, sans-serif !important;
             font-weight: bold !important;
             font-size: 13px !important;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05) !important;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04), inset 0 1px 1px rgba(255, 255, 255, 1.0) !important;
+            padding: 14px 20px !important;
+            margin-bottom: 16px !important;
+            overflow: hidden !important;
             transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
         }
-        div[data-testid="stAlert"] * {
-            font-family: Arial, sans-serif !important;
-            font-weight: bold !important;
-        }
-        div[data-testid="stAlertContainer"] {
+
+        /* Completely reset all inner nested wrappers so NO inner boxes or secondary borders appear */
+        div[data-testid="stAlert"] > div,
+        div[data-testid="stAlert"] div,
+        div[data-testid="stAlert"] section,
+        div[data-testid="stAlertContainer"],
+        div[data-testid^="stAlertContent"],
+        div[data-testid="stAlert"] [data-testid="stAlertContainer"],
+        div[data-testid="stAlert"] [data-testid^="stAlertContent"] {
             background: transparent !important;
+            background-color: transparent !important;
             border: none !important;
+            border-left: none !important;
+            border-right: none !important;
+            border-top: none !important;
+            border-bottom: none !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
         }
 
-        /* Frosted Glass Warning Alert Banner (High Contrast Slate & Amber Accent) */
+        /* Frosted Glass Warning Alert Banner (Surveillance Paused Notice - Single Clean Box) */
         div[data-testid="stAlert"]:has([data-testid*="Warning"]),
-        div[data-testid="stAlert"]:has([data-testid="stAlertContentWarning"]),
-        div[data-testid="stAlertContainer"]:has([data-testid*="Warning"]),
-        div[data-testid="stAlertContentWarning"] {
-            background: rgba(255, 255, 255, 0.92) !important;
-            backdrop-filter: blur(28px) saturate(190%) !important;
-            -webkit-backdrop-filter: blur(28px) saturate(190%) !important;
-            border: 1.5px solid rgba(245, 158, 11, 0.4) !important;
+        div[data-testid="stAlert"]:has([data-testid="stAlertContentWarning"]) {
+            background: rgba(255, 255, 255, 0.96) !important;
+            border: 1px solid rgba(245, 158, 11, 0.4) !important;
             border-left: 6px solid #f59e0b !important;
-            border-radius: 16px !important;
-            color: #0f172a !important;
-            box-shadow: 0 12px 32px rgba(245, 158, 11, 0.09), 0 2px 6px rgba(0, 0, 0, 0.03) !important;
+            box-shadow: 0 12px 30px rgba(245, 158, 11, 0.08), inset 0 1px 1px rgba(255, 255, 255, 1.0) !important;
         }
         div[data-testid="stAlert"]:has([data-testid*="Warning"]) *,
-        div[data-testid="stAlert"]:has([data-testid="stAlertContentWarning"]) *,
-        div[data-testid="stAlertContentWarning"] * {
+        div[data-testid="stAlert"]:has([data-testid*="Warning"]) p,
+        div[data-testid="stAlert"]:has([data-testid*="Warning"]) span {
             color: #0f172a !important;
             font-family: Arial, sans-serif !important;
             font-weight: 800 !important;
+            font-size: 13px !important;
         }
-        div[data-testid="stAlert"]:has([data-testid*="Warning"]) svg,
-        div[data-testid="stAlertContentWarning"] svg {
+        div[data-testid="stAlert"]:has([data-testid*="Warning"]) svg {
             fill: #f59e0b !important;
             color: #f59e0b !important;
         }
 
-        /* Critical Perimeter Threat Error Alert Banner */
+        /* Critical Perimeter Threat Error Alert Banner (Pulsing Red Single Box) */
         div[data-testid="stAlert"]:has([data-testid*="Error"]),
-        div[data-testid="stAlert"]:has([data-testid="stAlertContentError"]),
-        div[data-testid="stAlertContainer"]:has([data-testid*="Error"]),
-        div[data-testid="stAlertContentError"] {
-            background: rgba(254, 242, 242, 0.92) !important;
+        div[data-testid="stAlert"]:has([data-testid="stAlertContentError"]) {
+            background: rgba(254, 242, 242, 0.95) !important;
             backdrop-filter: blur(24px) saturate(180%) !important;
             -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
-            border: 1.5px solid #fca5a5 !important;
+            border: 1px solid #fca5a5 !important;
             border-left: 6px solid #ef4444 !important;
             border-radius: 16px !important;
             color: #991b1b !important;
@@ -709,11 +726,12 @@ def main():
             animation: pulse-red-alert 1.5s infinite ease-in-out !important;
         }
         div[data-testid="stAlert"]:has([data-testid*="Error"]) *,
-        div[data-testid="stAlert"]:has([data-testid="stAlertContentError"]) *,
-        div[data-testid="stAlertContentError"] * {
+        div[data-testid="stAlert"]:has([data-testid*="Error"]) p,
+        div[data-testid="stAlert"]:has([data-testid*="Error"]) span {
             color: #991b1b !important;
             font-family: Arial, sans-serif !important;
             font-weight: 800 !important;
+            font-size: 13px !important;
         }
         @keyframes pulse-red-alert {
             0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
@@ -767,17 +785,24 @@ def main():
         /* File Uploader (Frosted Glass Dropzone & Clean Secondary Action) */
         div[data-testid="stFileUploader"] section {
             border: 1.5px dashed rgba(37, 99, 235, 0.35) !important;
-            background: rgba(255, 255, 255, 0.75) !important;
+            background: rgba(255, 255, 255, 0.8) !important;
             backdrop-filter: blur(20px) !important;
             -webkit-backdrop-filter: blur(20px) !important;
             border-radius: 16px !important;
-            padding: 14px !important;
+            padding: 16px 14px !important;
             display: flex !important;
             flex-direction: column !important;
             align-items: center !important;
             justify-content: center !important;
-            gap: 10px !important;
+            gap: 8px !important;
             text-align: center !important;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02) !important;
+            transition: all 0.2s ease !important;
+        }
+        div[data-testid="stFileUploader"] section:hover {
+            border-color: #2563eb !important;
+            background: rgba(255, 255, 255, 0.95) !important;
+            box-shadow: 0 6px 18px rgba(37, 99, 235, 0.08) !important;
         }
         div[data-testid="stFileUploader"] section > div {
             display: flex !important;
@@ -787,20 +812,43 @@ def main():
             gap: 8px !important;
             width: 100% !important;
         }
+
+        /* Suppress duplicate text ligature icons in the file uploader button */
+        div[data-testid="stFileUploader"] section button [data-testid="stIconMaterial"],
+        div[data-testid="stFileUploader"] section button [data-testid*="Icon"],
+        div[data-testid="stFileUploader"] section button [aria-hidden="true"],
+        div[data-testid="stFileUploader"] section button > span:first-child:not(:only-child) {
+            display: none !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            height: 0 !important;
+            font-size: 0 !important;
+            line-height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            position: absolute !important;
+            pointer-events: none !important;
+        }
+
         div[data-testid="stFileUploader"] button,
         div[data-testid="stFileUploader"] button[kind="secondary"],
         div[data-testid="stFileUploader"] section button {
             background: #0f172a !important;
             color: #ffffff !important;
             border: 1px solid #0f172a !important;
-            border-radius: 10px !important;
+            border-radius: 12px !important;
             font-family: Arial, sans-serif !important;
-            font-weight: bold !important;
-            white-space: nowrap !important;
-            padding: 6px 16px !important;
-            font-size: 12px !important;
-            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12) !important;
+            font-weight: 800 !important;
+            font-size: 13px !important;
+            letter-spacing: 0.5px !important;
+            padding: 8px 24px !important;
+            min-width: 120px !important;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15) !important;
             transition: all 0.2s ease !important;
+            cursor: pointer !important;
+            display: inline-flex !important;
+            justify-content: center !important;
+            align-items: center !important;
         }
         div[data-testid="stFileUploader"] button:hover,
         div[data-testid="stFileUploader"] button[kind="secondary"]:hover,
@@ -808,6 +856,16 @@ def main():
             background: #1e293b !important;
             border-color: #1e293b !important;
             color: #ffffff !important;
+            transform: translateY(-1px) !important;
+            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.22) !important;
+        }
+        div[data-testid="stFileUploader"] section button > span:last-child {
+            display: inline-block !important;
+            color: #ffffff !important;
+            font-family: Arial, sans-serif !important;
+            font-weight: 800 !important;
+            font-size: 13px !important;
+            white-space: nowrap !important;
         }
         div[data-testid="stFileUploader"] button *,
         div[data-testid="stFileUploader"] button[kind="secondary"] *,
@@ -822,7 +880,7 @@ def main():
             align-items: center !important;
             justify-content: center !important;
             text-align: center !important;
-            margin-top: 4px !important;
+            margin-top: 6px !important;
             width: 100% !important;
         }
         div[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzoneInstructions"] span,
@@ -831,7 +889,7 @@ def main():
             font-family: Arial, sans-serif !important;
             font-size: 11px !important;
             color: #475569 !important;
-            font-weight: 500 !important;
+            font-weight: 700 !important;
             text-align: center !important;
             white-space: normal !important;
             word-break: break-word !important;
