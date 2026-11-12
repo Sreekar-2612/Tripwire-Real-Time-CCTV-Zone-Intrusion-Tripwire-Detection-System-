@@ -121,6 +121,144 @@ def open_capture_source(source, max_retries: int = 1):
     )
     return None, req_idx, None, err
 
+def run_browser_camera_pipeline(
+    feed_option, zone_preset, use_pose, use_demo_calib, imgsz, conf_threshold,
+    speed_alarm, dwell_confirm_sec, metric_status, metric_fps, metric_tracks,
+    metric_threat, metric_breaches, alert_banner_placeholder, dual_view_placeholder,
+    viewport_header_placeholder, key="browser_cam_client"
+):
+    """Universal browser camera frame processing pipeline for local, multi-laptop, and cloud deployments."""
+    metric_status.metric("Stream Status", "Browser Camera", "Client HTML5")
+    st.markdown("""
+        <div style="background: rgba(255, 255, 255, 0.85); border: 1.5px solid rgba(2, 132, 199, 0.35); border-radius: 16px; padding: 14px 20px; margin-bottom: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.03);">
+            <div style="font-family: 'Hosta', 'Host Grotesk', sans-serif; font-weight: 800; font-size: 14px; color: #0284c7; letter-spacing: 0.5px;">UNIVERSAL CLIENT-SIDE BROWSER CAMERA</div>
+            <div style="font-size: 12px; color: #475569; margin-top: 3px;">
+                Captures live video frames directly from your laptop or mobile camera using native browser HTML5. Works across all devices, operating systems, and remote network connections without requiring server-side hardware access.
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    cam_file = st.camera_input("Security Camera Feed (Client Browser HTML5)", key=key)
+    if cam_file is not None:
+        raw_bytes = cam_file.getvalue()
+        frame = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
+        if frame is not None:
+            detector = get_pose_detector() if use_pose else get_object_detector()
+            pose_classifier = PoseKineticClassifier(keypoint_conf_threshold=0.35) if use_pose else None
+            tracker = st.session_state.tracker
+            radar = BEVRadarRenderer(radar_size=480, world_extent_m=20.0, grid_step_m=2.0)
+            image_size = (frame.shape[1], frame.shape[0])
+            transformer = HomographyTransformer.for_source(0, image_size)
+            if not transformer.is_calibrated and use_demo_calib and Path("data/calibration.json").exists():
+                transformer = HomographyTransformer.load_calibration("data/calibration.json")
+            zones = get_default_zones(feed_option, preset=zone_preset)
+            t_frame_start = time.time()
+            display_frame = frame.copy()
+
+            t_infer_start = time.time()
+            try:
+                results = detector(display_frame, imgsz=imgsz, conf=conf_threshold, verbose=False)
+            except Exception:
+                results = []
+            infer_ms = (time.time() - t_infer_start) * 1000.0
+
+            raw_detections = []
+            if results and len(results) > 0:
+                r = results[0]
+                boxes = r.boxes
+                if boxes is not None and len(boxes) > 0:
+                    for idx, box in enumerate(boxes):
+                        cls_id = int(box.cls[0])
+                        if cls_id != 0:
+                            continue
+                        conf = float(box.conf[0])
+                        x1, y1, x2, y2 = map(float, box.xyxy[0].tolist())
+                        keypoints_data = None
+                        if use_pose and hasattr(r, 'keypoints') and r.keypoints is not None:
+                            try:
+                                kpts = r.keypoints.data[idx].cpu().numpy()
+                                if len(kpts) == 17:
+                                    keypoints_data = kpts
+                            except Exception:
+                                keypoints_data = None
+                        raw_detections.append({'bbox': [x1, y1, x2, y2], 'conf': conf, 'keypoints': keypoints_data})
+
+            t_track_start = time.time()
+            active_tracks = tracker.update(
+                raw_detections,
+                homography_transformer=transformer if transformer.is_calibrated else None,
+                pose_classifier=pose_classifier,
+                zones=zones,
+                elapsed_dt=0.033
+            )
+            track_ms = (time.time() - t_track_start) * 1000.0
+
+            now_ts = time.time()
+            frame_events = st.session_state.zone_monitor.update(
+                active_tracks, zones if transformer.is_calibrated else [], now_ts,
+                speed_alarm_kmh=speed_alarm, dwell_sec=dwell_confirm_sec
+            )
+            alarm_states = st.session_state.zone_monitor.get_alarm_states()
+
+            radar_tracks = []
+            breach_count = 0
+            for trk in active_tracks:
+                tid = trk["track_id"]
+                w_pos = trk.get("world_pos")
+                alarm = alarm_states.get(tid, {'is_breaching': False, 'is_monitoring': False, 'reasons': []})
+                is_confirmed_breach = alarm['is_breaching']
+                is_monitoring = alarm['is_monitoring']
+                speed_kmh = float(trk.get('speed', 0))
+                threat_level = trk.get('threat_level', 1)
+                posture_label = trk.get('posture', 'standing')
+                if use_pose and trk.get('keypoints') is not None:
+                    draw_pose_skeleton(display_frame, trk['keypoints'])
+                if is_confirmed_breach:
+                    breach_count += 1
+                radar_tracks.append({
+                    "track_id": trk["track_id"], "world_pos": w_pos,
+                    "world_trail": trk.get("world_trail", []), "speed_kmh": speed_kmh,
+                    "vx": trk.get("vx", 0.0), "vy": trk.get("vy", 0.0), "is_breaching": is_confirmed_breach
+                })
+                x1, y1, x2, y2 = map(int, trk["bbox"])
+                color = (0, 0, 255) if is_confirmed_breach else ((0, 215, 255) if is_monitoring else (0, 255, 0))
+                cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
+                speed_label = f"{speed_kmh:.1f}km/h" if w_pos is not None else "uncalibrated"
+                tag_label = f"#{trk['track_id']} | {posture_label.upper()} | {speed_label}"
+                (tw, th), baseline = cv2.getTextSize(tag_label, cv2.FONT_HERSHEY_SIMPLEX, 0.46, 1)
+                tag_y = max(th + 6, y1 - 8)
+                cv2.rectangle(display_frame, (x1, tag_y - th - 4), (x1 + tw + 6, tag_y + baseline), (15, 20, 25), -1)
+                cv2.rectangle(display_frame, (x1, tag_y - th - 4), (x1 + tw + 6, tag_y + baseline), color, 1)
+                cv2.putText(display_frame, tag_label, (x1 + 3, tag_y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.46, color, 1, cv2.LINE_AA)
+
+            radar_img = radar.render(zones if transformer.is_calibrated else [], radar_tracks,
+                                     title="GROUND RADAR" if transformer.is_calibrated else "UNCALIBRATED")
+            dual_view = BEVRadarRenderer.create_dual_view(display_frame, radar_img)
+            dual_view_resized = cv2.resize(dual_view, (1280, 480), interpolation=cv2.INTER_AREA)
+            dual_view_rgb = cv2.cvtColor(dual_view_resized, cv2.COLOR_BGR2RGB)
+
+            viewport_header_placeholder.markdown("""
+                <div class="viewport-hud-topbar">
+                    <div class="viewport-hud-title">
+                        <span>PRIMARY OPTICAL FOV (LEFT) // BIRD'S EYE VIEW RADAR 20m (RIGHT)</span>
+                    </div>
+                    <div class="viewport-hud-badge">LIVE BROWSER CAMERA</div>
+                </div>
+            """, unsafe_allow_html=True)
+            dual_view_placeholder.image(dual_view_rgb, **IMAGE_KWARGS)
+            metric_fps.metric("Inference", f"{infer_ms:.0f}ms", f"Track: {track_ms:.0f}ms")
+            metric_tracks.metric("Active Targets", str(len(active_tracks)), "Client FOV")
+            metric_breaches.metric("Intrusion Breaches", str(breach_count), f"{len(frame_events)} Events")
+            if breach_count > 0:
+                metric_threat.metric("Threat Index", "CRITICAL", "DEFCON 1 // BREACH")
+                alert_banner_placeholder.markdown("""
+                    <div class="soc-alert-banner">
+                        <span class="soc-alert-icon"></span> CRITICAL PERIMETER BREACH ACTIVE — INTRUDER DETECTED IN RESTRICTED ZONE
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                metric_threat.metric("Threat Index", "Nominal", "DEFCON 4 // Secure")
+                alert_banner_placeholder.empty()
+
 def main():
     if st is None:
         print("Please install Streamlit using: pip install streamlit")
@@ -1251,148 +1389,37 @@ def main():
         st.session_state.zone_monitor = ZoneMonitor()
 
     if video_path == "browser_camera":
-        metric_status.metric("Stream Status", "Browser Camera", "Client HTML5")
-        st.markdown("""
-            <div style="background: rgba(255, 255, 255, 0.85); border: 1.5px solid rgba(2, 132, 199, 0.35); border-radius: 16px; padding: 14px 20px; margin-bottom: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.03);">
-                <div style="font-family: 'Hosta', 'Host Grotesk', sans-serif; font-weight: 800; font-size: 14px; color: #0284c7; letter-spacing: 0.5px;">UNIVERSAL CLIENT-SIDE BROWSER CAMERA</div>
-                <div style="font-size: 12px; color: #475569; margin-top: 3px;">
-                    Captures live video frames directly from your laptop or mobile camera using native browser HTML5. Works across all devices, operating systems, and remote network connections without requiring server-side hardware access.
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-        cam_file = st.camera_input("Security Camera Feed (Client Browser HTML5)", key="browser_cam_client")
-        if cam_file is not None:
-            raw_bytes = cam_file.getvalue()
-            frame = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
-            if frame is not None:
-                detector = get_pose_detector() if use_pose else get_object_detector()
-                pose_classifier = PoseKineticClassifier(keypoint_conf_threshold=0.35) if use_pose else None
-                tracker = st.session_state.tracker
-                radar = BEVRadarRenderer(radar_size=480, world_extent_m=20.0, grid_step_m=2.0)
-                image_size = (frame.shape[1], frame.shape[0])
-                transformer = HomographyTransformer.for_source(0, image_size)
-                if not transformer.is_calibrated and use_demo_calib and Path("data/calibration.json").exists():
-                    transformer = HomographyTransformer.load_calibration("data/calibration.json")
-                zones = get_default_zones(feed_option, preset=zone_preset)
-                t_frame_start = time.time()
-                display_frame = frame.copy()
-
-                t_infer_start = time.time()
-                try:
-                    results = detector(display_frame, imgsz=imgsz, conf=conf_threshold, verbose=False)
-                except Exception:
-                    results = []
-                infer_ms = (time.time() - t_infer_start) * 1000.0
-
-                raw_detections = []
-                if results and len(results) > 0:
-                    r = results[0]
-                    boxes = r.boxes
-                    if boxes is not None and len(boxes) > 0:
-                        for idx, box in enumerate(boxes):
-                            cls_id = int(box.cls[0])
-                            if cls_id != 0:
-                                continue
-                            conf = float(box.conf[0])
-                            x1, y1, x2, y2 = map(float, box.xyxy[0].tolist())
-                            keypoints_data = None
-                            if use_pose and hasattr(r, 'keypoints') and r.keypoints is not None:
-                                try:
-                                    kpts = r.keypoints.data[idx].cpu().numpy()
-                                    if len(kpts) == 17:
-                                        keypoints_data = kpts
-                                except Exception:
-                                    keypoints_data = None
-                            raw_detections.append({'bbox': [x1, y1, x2, y2], 'conf': conf, 'keypoints': keypoints_data})
-
-                t_track_start = time.time()
-                active_tracks = tracker.update(
-                    raw_detections,
-                    homography_transformer=transformer if transformer.is_calibrated else None,
-                    pose_classifier=pose_classifier,
-                    zones=zones,
-                    elapsed_dt=0.033
-                )
-                track_ms = (time.time() - t_track_start) * 1000.0
-
-                now_ts = time.time()
-                frame_events = st.session_state.zone_monitor.update(
-                    active_tracks, zones if transformer.is_calibrated else [], now_ts,
-                    speed_alarm_kmh=speed_alarm, dwell_sec=dwell_confirm_sec
-                )
-                alarm_states = st.session_state.zone_monitor.get_alarm_states()
-
-                radar_tracks = []
-                breach_count = 0
-                for trk in active_tracks:
-                    tid = trk["track_id"]
-                    w_pos = trk.get("world_pos")
-                    alarm = alarm_states.get(tid, {'is_breaching': False, 'is_monitoring': False, 'reasons': []})
-                    is_confirmed_breach = alarm['is_breaching']
-                    is_monitoring = alarm['is_monitoring']
-                    speed_kmh = float(trk.get('speed', 0))
-                    threat_level = trk.get('threat_level', 1)
-                    posture_label = trk.get('posture', 'standing')
-                    if use_pose and trk.get('keypoints') is not None:
-                        draw_pose_skeleton(display_frame, trk['keypoints'])
-                    if is_confirmed_breach:
-                        breach_count += 1
-                    radar_tracks.append({
-                        "track_id": trk["track_id"], "world_pos": w_pos,
-                        "world_trail": trk.get("world_trail", []), "speed_kmh": speed_kmh,
-                        "vx": trk.get("vx", 0.0), "vy": trk.get("vy", 0.0), "is_breaching": is_confirmed_breach
-                    })
-                    x1, y1, x2, y2 = map(int, trk["bbox"])
-                    color = (0, 0, 255) if is_confirmed_breach else ((0, 215, 255) if is_monitoring else (0, 255, 0))
-                    cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
-                    speed_label = f"{speed_kmh:.1f}km/h" if w_pos is not None else "uncalibrated"
-                    tag_label = f"#{trk['track_id']} | {posture_label.upper()} | {speed_label}"
-                    (tw, th), baseline = cv2.getTextSize(tag_label, cv2.FONT_HERSHEY_SIMPLEX, 0.46, 1)
-                    tag_y = max(th + 6, y1 - 8)
-                    cv2.rectangle(display_frame, (x1, tag_y - th - 4), (x1 + tw + 6, tag_y + baseline), (15, 20, 25), -1)
-                    cv2.rectangle(display_frame, (x1, tag_y - th - 4), (x1 + tw + 6, tag_y + baseline), color, 1)
-                    cv2.putText(display_frame, tag_label, (x1 + 3, tag_y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.46, color, 1, cv2.LINE_AA)
-
-                radar_img = radar.render(zones if transformer.is_calibrated else [], radar_tracks,
-                                         title="GROUND RADAR" if transformer.is_calibrated else "UNCALIBRATED")
-                dual_view = BEVRadarRenderer.create_dual_view(display_frame, radar_img)
-                dual_view_resized = cv2.resize(dual_view, (1280, 480), interpolation=cv2.INTER_AREA)
-                dual_view_rgb = cv2.cvtColor(dual_view_resized, cv2.COLOR_BGR2RGB)
-
-                viewport_header_placeholder.markdown("""
-                    <div class="viewport-hud-topbar">
-                        <div class="viewport-hud-title">
-                            <span>PRIMARY OPTICAL FOV (LEFT) // BIRD'S EYE VIEW RADAR 20m (RIGHT)</span>
-                        </div>
-                        <div class="viewport-hud-badge">LIVE BROWSER CAMERA</div>
-                    </div>
-                """, unsafe_allow_html=True)
-                dual_view_placeholder.image(dual_view_rgb, **IMAGE_KWARGS)
-                metric_fps.metric("Inference", f"{infer_ms:.0f}ms", f"Track: {track_ms:.0f}ms")
-                metric_tracks.metric("Active Targets", str(len(active_tracks)), "Client FOV")
-                metric_breaches.metric("Intrusion Breaches", str(breach_count), f"{len(frame_events)} Events")
-                if breach_count > 0:
-                    metric_threat.metric("Threat Index", "CRITICAL", "DEFCON 1 // BREACH")
-                    alert_banner_placeholder.markdown("""
-                        <div class="soc-alert-banner">
-                            <span class="soc-alert-icon"></span> CRITICAL PERIMETER BREACH ACTIVE — INTRUDER DETECTED IN RESTRICTED ZONE
-                        </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    metric_threat.metric("Threat Index", "Nominal", "DEFCON 4 // Secure")
-                    alert_banner_placeholder.empty()
+        run_browser_camera_pipeline(
+            feed_option, zone_preset, use_pose, use_demo_calib, infer_imgsz, conf_thresh,
+            speed_alarm, dwell_confirm_sec, metric_status, metric_fps, metric_tracks,
+            metric_threat, metric_breaches, alert_banner_placeholder, dual_view_placeholder,
+            viewport_header_placeholder, key="browser_cam_client"
+        )
 
     elif st.session_state.is_running and video_path is not None:
         if st.session_state.cap is None or not st.session_state.cap.isOpened():
             cap, actual_src, backend_name, err = open_capture_source(video_path)
             if cap is None or not cap.isOpened():
-                metric_status.metric("Stream Status", "Standby", "Awaiting Engage")
-                if err:
-                    status_text.error(err)
+                if isinstance(video_path, int):
+                    status_text.warning(
+                        f"Hardware camera index #{video_path} is not attached to this server host (e.g. running on Streamlit Cloud or remote container). "
+                        "Switched automatically to live Client Browser Camera below — allow camera access in your browser to begin live surveillance!"
+                    )
+                    run_browser_camera_pipeline(
+                        feed_option, zone_preset, use_pose, use_demo_calib, infer_imgsz, conf_thresh,
+                        speed_alarm, dwell_confirm_sec, metric_status, metric_fps, metric_tracks,
+                        metric_threat, metric_breaches, alert_banner_placeholder, dual_view_placeholder,
+                        viewport_header_placeholder, key="fallback_browser_cam"
+                    )
+                    return
                 else:
-                    status_text.error(f"Could not open stream for '{feed_option}'.")
-                st.session_state.is_running = False
-                return
+                    metric_status.metric("Stream Status", "Standby", "Awaiting Engage")
+                    if err:
+                        status_text.error(err)
+                    else:
+                        status_text.error(f"Could not open stream for '{feed_option}'.")
+                    st.session_state.is_running = False
+                    return
 
             if isinstance(video_path, int) and actual_src != video_path:
                 status_text.info(f"Target webcam index #{video_path} was unavailable; automatically bound to active camera #{actual_src} ({backend_name}).")
