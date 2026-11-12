@@ -1,6 +1,7 @@
 import time
 import json
 import inspect
+import sys
 from pathlib import Path
 import cv2
 import numpy as np
@@ -51,6 +52,84 @@ def get_object_detector():
 def get_pose_detector():
     """Caches YOLOv8 pose detector in memory for kinetic threat classification."""
     return YOLO("yolov8n-pose.pt")
+
+def open_capture_source(source, max_retries: int = 2):
+    """
+    Resilient multi-backend video and webcam capture initialization.
+    For webcams (integers or numeric strings):
+      - Tries primary index with DirectShow (cv2.CAP_DSHOW) on Windows with explicit retries.
+      - Falls back to MSMF (cv2.CAP_MSMF).
+      - Falls back to default backend (cv2.CAP_ANY).
+      - If requested index is unreachable, automatically probes alternative connected indices (0, 1, 2).
+      - Executes warmup reads to ensure the sensor is transmitting valid image data.
+      - Sets 640x480 resolution and buffer size = 1 for minimal latency.
+    For video files:
+      - Opens file with standard cv2.VideoCapture(source).
+    Returns:
+      (cap, actual_source, backend_name, error_message)
+    """
+    is_webcam = isinstance(source, int) or (isinstance(source, str) and source.isdigit())
+    if not is_webcam:
+        cap = cv2.VideoCapture(source)
+        if cap.isOpened():
+            return cap, source, "File", None
+        return None, source, "File", f"Could not open video file ({source}). Please verify the file exists."
+
+    req_idx = int(source)
+    backends = [
+        ("DirectShow", cv2.CAP_DSHOW),
+        ("Media Foundation", cv2.CAP_MSMF),
+        ("Default", cv2.CAP_ANY)
+    ] if sys.platform.startswith("win") else [("Default", cv2.CAP_ANY)]
+
+    # Check requested index first, followed by alternate device indexes
+    candidate_indices = [req_idx] + [i for i in [0, 1, 2] if i != req_idx]
+
+    for idx in candidate_indices:
+        for b_name, b_flag in backends:
+            for attempt in range(max_retries):
+                try:
+                    cap = cv2.VideoCapture(idx, b_flag)
+                except Exception:
+                    continue
+                if cap.isOpened():
+                    try:
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    except Exception:
+                        pass
+                    # Verify camera transmits actual frames with warmup reads
+                    warmup_ok = False
+                    for _ in range(5):
+                        try:
+                            ret, f = cap.read()
+                            if ret and f is not None and f.size > 0:
+                                warmup_ok = True
+                                break
+                        except Exception:
+                            pass
+                        time.sleep(0.06)
+                    if warmup_ok:
+                        return cap, idx, b_name, None
+                    try:
+                        cap.release()
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        cap.release()
+                    except Exception:
+                        pass
+                time.sleep(0.12)
+
+    err = (
+        f"Could not access webcam device index #{req_idx}.\n\n"
+        "• Ensure camera is connected and recognized in Windows Device Manager.\n"
+        "• Check Windows Settings > Privacy & security > Camera to ensure apps can access your camera.\n"
+        "• Ensure another application (Zoom, Teams, Discord, WhatsApp, Chrome) is not currently locking the webcam."
+    )
+    return None, req_idx, None, err
 
 def main():
     if st is None:
@@ -154,6 +233,15 @@ def main():
             background-color: rgba(245, 247, 251, 0.45) !important;
             backdrop-filter: blur(16px) !important;
             -webkit-backdrop-filter: blur(16px) !important;
+        }
+
+        /* Clean Header: Suppress local Community Cloud Deploy button artifacts */
+        .stDeployButton,
+        [data-testid="stDeployButton"],
+        [data-testid="stToolbarActions"] button:has([data-testid="stIconDeploy"]),
+        header button:has([data-testid="stIconDeploy"]),
+        div:has(> button:has([data-testid="stIconDeploy"])) {
+            display: none !important;
         }
 
         /* Floating 3D Spheres & Matrix Grid Keyframe Motion */
@@ -1171,27 +1259,18 @@ def main():
 
     if st.session_state.is_running and video_path is not None:
         if st.session_state.cap is None or not st.session_state.cap.isOpened():
-            if isinstance(video_path, int):
-                cap = cv2.VideoCapture(video_path, cv2.CAP_DSHOW)
-                if not cap.isOpened():
-                    cap = cv2.VideoCapture(video_path, cv2.CAP_MSMF)
-                if not cap.isOpened():
-                    cap = cv2.VideoCapture(video_path)
-            else:
-                cap = cv2.VideoCapture(video_path)
-
-            if not cap.isOpened():
-                if isinstance(video_path, int):
-                    status_text.error(
-                        f"Could not access webcam device index #{video_path}.\n\n"
-                        "• Ensure camera is connected and recognized in Windows Device Manager.\n"
-                        "• Check Windows Settings > Privacy & security > Camera to ensure apps can access your camera.\n"
-                        "• Ensure another application (Zoom, Teams, Discord, Chrome) is not currently locking the webcam."
-                    )
+            cap, actual_src, backend_name, err = open_capture_source(video_path)
+            if cap is None or not cap.isOpened():
+                if err:
+                    status_text.error(err)
                 else:
-                    status_text.error(f"Could not open video file ({video_path}). Please verify the file exists.")
+                    status_text.error(f"Could not open stream for '{feed_option}'.")
                 st.session_state.is_running = False
                 return
+
+            if isinstance(video_path, int) and actual_src != video_path:
+                status_text.info(f"Target webcam index #{video_path} was unavailable; automatically bound to active camera #{actual_src} ({backend_name}).")
+                video_path = actual_src
 
             st.session_state.cap = cap
             st.session_state.current_feed = video_path
@@ -1236,6 +1315,9 @@ def main():
         frame_count = 0
         t0 = time.time()
         last_siren_time = 0.0
+        consecutive_read_failures = 0
+        is_webcam = isinstance(video_path, int) or (isinstance(video_path, str) and video_path.isdigit())
+        MAX_READ_FAILURES = 10 if is_webcam else 1
 
         try:
             # Continuous processing loop
@@ -1258,6 +1340,10 @@ def main():
                             ret, frame = False, None
 
                     if not ret or frame is None:
+                        consecutive_read_failures += 1
+                        if consecutive_read_failures < MAX_READ_FAILURES:
+                            time.sleep(0.04)
+                            continue
                         status_text.error(f"Video stream or camera feed '{feed_option}' was disconnected or ended.")
                         st.session_state.is_running = False
                         if st.session_state.cap is not None:
@@ -1267,6 +1353,8 @@ def main():
                                 pass
                             st.session_state.cap = None
                         break
+                else:
+                    consecutive_read_failures = 0
 
                 frame_elapsed_dt = clock.tick()
                 frame_count += 1

@@ -356,3 +356,91 @@ def test_web_stream_engine_reconnect_cooldown():
         frame = engine.get_frame()
         assert len(frame) > 0
         mock_init.assert_not_called()
+
+
+# =============================================================================
+# 7. RESILIENT MULTI-BACKEND WEBCAM INITIALIZATION & FALLBACK
+# =============================================================================
+
+def test_open_capture_source_file_success(tmp_path):
+    """Verify open_capture_source opens a valid video file cleanly."""
+    from app_streamlit import open_capture_source
+    test_video = tmp_path / "dummy.mp4"
+    test_video.write_bytes(b"dummy video data")
+
+    with patch("cv2.VideoCapture") as mock_vc:
+        mock_instance = MagicMock()
+        mock_instance.isOpened.return_value = True
+        mock_vc.return_value = mock_instance
+
+        cap, src, backend, err = open_capture_source(str(test_video))
+        assert cap is not None
+        assert src == str(test_video)
+        assert backend == "File"
+        assert err is None
+
+
+def test_open_capture_source_file_missing():
+    """Verify open_capture_source returns descriptive error when file is missing."""
+    from app_streamlit import open_capture_source
+    with patch("cv2.VideoCapture") as mock_vc:
+        mock_instance = MagicMock()
+        mock_instance.isOpened.return_value = False
+        mock_vc.return_value = mock_instance
+
+        cap, src, backend, err = open_capture_source("non_existent_file.mp4")
+        assert cap is None
+        assert "Could not open video file" in err
+
+
+def test_open_capture_source_webcam_primary_success():
+    """Verify open_capture_source validates warmup reads and sets 640x480 resolution."""
+    from app_streamlit import open_capture_source
+    with patch("cv2.VideoCapture") as mock_vc:
+        mock_instance = MagicMock()
+        mock_instance.isOpened.return_value = True
+        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        mock_instance.read.return_value = (True, dummy_frame)
+        mock_vc.return_value = mock_instance
+
+        cap, idx, backend, err = open_capture_source(0, max_retries=1)
+        assert cap is not None
+        assert idx == 0
+        assert err is None
+        mock_instance.set.assert_any_call(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        mock_instance.set.assert_any_call(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+
+def test_open_capture_source_webcam_fallback_to_zero():
+    """Verify open_capture_source falls back to active camera index 0 if index 1 fails."""
+    from app_streamlit import open_capture_source
+
+    def mock_vc_constructor(idx, *args):
+        m = MagicMock()
+        if idx == 1:
+            m.isOpened.return_value = False
+        else:
+            m.isOpened.return_value = True
+            m.read.return_value = (True, np.zeros((480, 640, 3), dtype=np.uint8))
+        return m
+
+    with patch("cv2.VideoCapture", side_effect=mock_vc_constructor):
+        cap, actual_idx, backend, err = open_capture_source(1, max_retries=1)
+        assert cap is not None
+        assert actual_idx == 0
+        assert err is None
+
+
+def test_open_capture_source_webcam_all_locked():
+    """Verify open_capture_source returns structured troubleshooting info when all backends fail."""
+    from app_streamlit import open_capture_source
+    with patch("cv2.VideoCapture") as mock_vc:
+        mock_instance = MagicMock()
+        mock_instance.isOpened.return_value = False
+        mock_vc.return_value = mock_instance
+
+        cap, idx, backend, err = open_capture_source(0, max_retries=1)
+        assert cap is None
+        assert "Could not access webcam device index #0" in err
+        assert "Windows Camera Privacy" in err or "Windows Settings" in err
+
