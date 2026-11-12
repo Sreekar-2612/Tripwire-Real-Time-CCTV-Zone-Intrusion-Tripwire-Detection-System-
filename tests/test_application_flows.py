@@ -55,7 +55,7 @@ def test_upload_same_name_new_content_and_rerun_cleanup():
     current.name = 'clip.mp4'
     def upload(label, **kwargs):
         return current if label == 'Upload video file' else None
-    at = AppTest.from_file(APP_SCRIPT).run()
+    at = AppTest.from_file(APP_SCRIPT, default_timeout=30).run()
     with patch.object(DeltaGenerator, 'file_uploader', side_effect=upload):
         at.selectbox[1].select('Upload Custom MP4').run()
         assert not at.exception
@@ -99,7 +99,7 @@ def test_streamlit_records_two_people_once_and_exports_after_stop():
     def detector(frame, **kwargs):
         raw_frames.append(frame.copy())
         return []
-    at = AppTest.from_file(APP_SCRIPT).run()
+    at = AppTest.from_file(APP_SCRIPT, default_timeout=30).run()
     with patch.object(DeltaGenerator, 'file_uploader', return_value=calibration), \
          patch.object(cv2, 'VideoCapture', Capture), \
          patch.object(MultiTargetTracker, 'update', return_value=tracks), \

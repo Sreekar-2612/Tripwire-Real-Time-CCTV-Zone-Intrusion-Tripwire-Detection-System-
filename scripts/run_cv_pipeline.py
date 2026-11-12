@@ -62,6 +62,8 @@ def run_cv_engine(
 
     try:
         transformer = HomographyTransformer.for_source(video_source, (w, h), calibration_file)
+        if not transformer.is_calibrated and calibration_file is None and Path("data/calibration.json").exists():
+            transformer = HomographyTransformer.load_calibration("data/calibration.json")
     except Exception:
         cap.release()
         raise

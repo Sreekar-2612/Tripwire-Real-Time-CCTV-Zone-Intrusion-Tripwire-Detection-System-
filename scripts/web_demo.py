@@ -133,6 +133,8 @@ class WebStreamEngine:
         self.clock = FrameClock(self.cap, live=str(src).isdigit() or '://' in str(src)) if self.cap is not None else None
         size = (int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))) if self.cap is not None else (0, 0)
         self.transformer = HomographyTransformer.for_source(src, size)
+        if not self.transformer.is_calibrated and Path("data/calibration.json").exists():
+            self.transformer = HomographyTransformer.load_calibration("data/calibration.json")
         self.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=.3)
         self.monitor = ZoneMonitor()
         self.latest_jpeg = None

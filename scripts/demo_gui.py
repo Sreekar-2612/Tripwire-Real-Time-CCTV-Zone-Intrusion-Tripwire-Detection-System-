@@ -67,6 +67,8 @@ class TripwireInteractiveDemo:
         self.clock = FrameClock(self.cap, live=src.isdigit() or '://' in src)
         size = (int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
         self.transformer = HomographyTransformer.for_source(src, size)
+        if not self.transformer.is_calibrated and Path("data/calibration.json").exists():
+            self.transformer = HomographyTransformer.load_calibration("data/calibration.json")
         self.monitor = ZoneMonitor()
         self.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
         print(f"Loaded feed [{key}]: {src}")

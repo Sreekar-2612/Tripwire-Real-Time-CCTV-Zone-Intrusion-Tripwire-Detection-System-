@@ -191,6 +191,11 @@ def main():
         help="Realistic layout monitors off-limits doors/alcoves. Stress test places the zone in the center walkway."
     )
     show_grid = st.sidebar.checkbox("Project Perspective Ground Grid", value=True)
+    use_demo_calib = st.sidebar.checkbox(
+        "Apply Floor Calibration (Enable Velocity & Radar)",
+        value=True,
+        help="Applies default calibrated floor homography to estimate ground coordinates, metric velocity (km/h), and BEV radar blips when camera-specific calibration is not loaded."
+    )
 
     st.sidebar.markdown("---")
     col_btn1, col_btn2 = st.sidebar.columns(2)
@@ -315,8 +320,10 @@ def main():
             cap.release()
             st.session_state.cap = None
             return
+        if not transformer.is_calibrated and use_demo_calib and Path("data/calibration.json").exists():
+            transformer = HomographyTransformer.load_calibration("data/calibration.json")
         if not transformer.is_calibrated:
-            st.warning('This feed is uncalibrated. Ground positions, metric speed, and spatial alarms are disabled. Select a calibration JSON for this camera.')
+            st.warning('This feed is uncalibrated. Ground positions, metric speed, and spatial alarms are disabled. Select a calibration JSON for this camera or check "Apply Floor Calibration".')
         calibration_key = (str(video_path), transformer.H.tobytes() if transformer.is_calibrated else None, zone_preset, use_pose)
         if st.session_state.get('_calibration_key') != calibration_key:
             st.session_state.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
