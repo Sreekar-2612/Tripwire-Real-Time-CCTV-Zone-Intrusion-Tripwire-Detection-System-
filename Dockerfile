@@ -33,8 +33,8 @@ USER appuser
 # Copy codebase
 COPY --chown=appuser:appuser . /app
 
-# Pre-download YOLOv8n weights so the container starts instantly offline
-RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
+# Pre-download YOLOv8n detector and YOLOv8n-pose weights so the container starts instantly offline (Fix #20)
+RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt'); YOLO('yolov8n-pose.pt')"
 
 EXPOSE 8501 8000
 

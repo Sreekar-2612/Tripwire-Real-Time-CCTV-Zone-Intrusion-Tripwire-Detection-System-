@@ -133,10 +133,11 @@ def benchmark_diou_vs_iou_association() -> Dict[str, Any]:
 
         # 2. DIoU
         diou_mat = compute_diou_matrix(track_boxes, det_boxes)
-        cost_diou = 1.0 - diou_mat
-        row_diou, col_diou = linear_sum_assignment(cost_diou)
-        # Even when IoU=0, DIoU matches the correct target due to centroid proximity
-        diou_correct = (0, 0) in zip(row_diou, col_diou) and (1, 1) in zip(row_diou, col_diou)
+        from types import SimpleNamespace
+        matching, _, _ = linear_assignment_iou(
+            [SimpleNamespace(bbox=b) for b in track_boxes],
+            [{'bbox': b} for b in det_boxes], .1)
+        diou_correct = (0, 0) in matching and (1, 1) in matching
 
         results_displacement.append({
             "displacement_px": disp,
@@ -148,8 +149,8 @@ def benchmark_diou_vs_iou_association() -> Dict[str, Any]:
 
     # Benchmark full tracking sequence with sudden 65px acceleration jump (simulating 60 km/h or frame drops)
     # Tracker with Standard IoU vs DIoU
-    # In DIoU tracker, Kalman displacement + DIoU affinity maintains track
-    # Track 10 frames with an abrupt jump at frame 5
+    # Measure the actual production tracker, including losses at the acceptance gate.
+    SingleTrack.reset_id_counter(1)
     track_history_diou = []
     tracker_diou = MultiTargetTracker(min_hits=1, max_age=5, iou_threshold=0.1)
 
@@ -161,9 +162,10 @@ def benchmark_diou_vs_iou_association() -> Dict[str, Any]:
 
     return {
         "displacement_eval": results_displacement,
-        "max_tolerated_displacement_iou_px": 35.0,  # Fails when disp >= box_w (40px)
-        "max_tolerated_displacement_diou_px": 80.0, # Retains correct association even when disp > box_w
-        "diou_tracking_retention": "100% ID Preservation over high-speed frame leaps"
+        "max_tolerated_displacement_iou_px": max((r["displacement_px"] for r in results_displacement if r["iou_matched"]), default=0),
+        "max_tolerated_displacement_diou_px": max((r["displacement_px"] for r in results_displacement if r["diou_matched"]), default=0),
+        "diou_tracking_retention": len({tid for frame in track_history_diou for tid in frame}) == 1,
+        "track_history": track_history_diou
     }
 
 
@@ -260,31 +262,11 @@ def benchmark_temporal_posture_smoothing() -> Dict[str, Any]:
     # Optimized (Temporal History Smoothing)
     # Using the exact smoothed logic in SingleTrack
     smoothed_postures = []
-    posture_history = []
-    current_posture = "running"
-
+    track = SingleTrack([0, 0, 100, 200], .9, (50, 200))
     for raw_p in raw_postures:
-        posture_history.append(raw_p)
-        if len(posture_history) > 6:
-            posture_history.pop(0)
-
-        threats = [p for p in posture_history if p in ("climbing", "crawling", "fallen")]
-        if len(threats) >= 2:
-            current_posture = Counter(threats).most_common(1)[0][0]
-        elif len(posture_history) == 1:
-            current_posture = raw_p
-        else:
-            counts = Counter(posture_history)
-            max_count = max(counts.values())
-            candidates = [p for p, c in counts.items() if c == max_count]
-            if len(candidates) == 1:
-                current_posture = candidates[0]
-            else:
-                for p in reversed(posture_history):
-                    if p in candidates:
-                        current_posture = p
-                        break
-        smoothed_postures.append(current_posture)
+        track.update([0, 0, 100, 200], .9, (50, 200),
+                     posture_info={'posture': raw_p, 'threat_level': 6 if raw_p == 'running' else 1})
+        smoothed_postures.append(track.posture)
 
     smoothed_flickers = 0
     for i in range(1, len(smoothed_postures)):
@@ -308,7 +290,7 @@ def benchmark_temporal_posture_smoothing() -> Dict[str, Any]:
 
 def benchmark_pipeline_latency_profile() -> Dict[str, Any]:
     """
-    Profiles latency across all CV pipeline components on 640x640 frame.
+    Measures isolated component latencies on synthetic inputs; their sum excludes ingestion, UI, and encoding.
     """
     from ultralytics import YOLO
     
@@ -394,7 +376,7 @@ def run_all_benchmarks():
     print("\n[2/5] Benchmarking DIoU vs Standard IoU Hungarian Bipartite Matching...")
     diou_stats = benchmark_diou_vs_iou_association()
     print(f"  -> Standard IoU Breakdown Threshold: {diou_stats['max_tolerated_displacement_iou_px']} px")
-    print(f"  -> DIoU High-Speed Tolerance: >{diou_stats['max_tolerated_displacement_diou_px']} px")
+    print(f"  -> Largest tested accepted DIoU displacement: {diou_stats['max_tolerated_displacement_diou_px']} px")
     print(f"  -> Tracking Retention: {diou_stats['diou_tracking_retention']}")
 
     print("\n[3/5] Benchmarking Ankle Keypoint vs Bbox Bottom Ground Contact...")
@@ -409,20 +391,23 @@ def run_all_benchmarks():
     print(f"  -> Temporally Smoothed Flickers: {posture_stats['optimized_smoothed_flickers']} (Accuracy: {posture_stats['optimized_posture_accuracy_pct']}%)")
     print(f"  -> False Flicker Reduction: {posture_stats['flicker_reduction_pct']}%")
 
-    print("\n[5/5] Profiling End-to-End Pipeline Latency Breakdown...")
+    print("\n[5/5] Profiling isolated components (sum is not application throughput)...")
     lat_stats = benchmark_pipeline_latency_profile()
     print(f"  -> YOLOv8 Inference: {lat_stats['yolo_inference_mean_ms']} ms")
     print(f"  -> DIoU Tracker + Kalman: {lat_stats['tracker_diou_mean_ms']} ms")
     print(f"  -> Homography DLT: {lat_stats['homography_projection_mean_ms']} ms")
     print(f"  -> BEV Radar Compositing: {lat_stats['bev_cached_render_mean_ms']} ms")
-    print(f"  -> Total Pipeline: {lat_stats['total_pipeline_mean_ms']} ms | Throughput: {lat_stats['total_fps']} FPS")
+    print(f"  -> Isolated component sum: {lat_stats['total_pipeline_mean_ms']} ms | Reciprocal estimate: {lat_stats['total_fps']} FPS")
 
     print("\n" + "=" * 78)
     print("✅ BENCHMARK SUITE COMPLETED SUCCESSFULLY")
     print("=" * 78)
 
     # Save results as JSON
+    import platform
     results = {
+        "method": "Isolated components; synthetic tracking/geometry inputs; not application throughput or labeled accuracy",
+        "environment": {"python": platform.python_version(), "platform": platform.platform(), "torch": torch.__version__, "opencv": cv2.__version__},
         "bev_caching": bev_stats,
         "diou_matching": diou_stats,
         "ankle_ground_contact": ankle_stats,

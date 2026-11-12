@@ -13,4 +13,7 @@ def test_inference_profiler_execution():
 
     report = profiler.generate_markdown_report(stats)
     assert "| **Preprocessing** |" in report
-    assert "| **End-to-End Pipeline** |" in report
+    assert "| **Synthetic Pipeline** |" in report
+
+    assert "not neural inference" in report
+    assert "not NMS" in report

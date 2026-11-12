@@ -12,17 +12,22 @@ if str(project_root) not in sys.path:
 import cv2
 import numpy as np
 import torch
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, Request, HTTPException
+import os
+import base64
+import hmac
 from fastapi.responses import HTMLResponse, StreamingResponse
 import uvicorn
+from contextlib import asynccontextmanager
 
 from ultralytics import YOLO
-from contextlib import asynccontextmanager
 from cv_core.geometry.homography import HomographyTransformer
 from cv_core.geometry.zones_3d import MetricZone3D
 from cv_core.tracking.tracker import MultiTargetTracker
 from cv_core.visualizer.bev_radar import BEVRadarRenderer
 from cv_core.kinetics.pose_classifier import PoseKineticClassifier, draw_pose_skeleton
+from cv_core.video import FrameClock
+from cv_core.monitoring import ZoneMonitor
 
 @asynccontextmanager
 async def lifespan(app_instance: FastAPI):
@@ -34,6 +39,24 @@ async def lifespan(app_instance: FastAPI):
             pass
 
 app = FastAPI(title="Tripwire CV Live Demo Showcase", lifespan=lifespan)
+
+
+@app.middleware('http')
+async def protect_camera(request: Request, call_next):
+    token = os.environ.get('TRIPWIRE_TOKEN')
+    if token:
+        try:
+            scheme, encoded = request.headers.get('authorization', '').split(' ', 1)
+            user, password = base64.b64decode(encoded, validate=True).decode().split(':', 1)
+            authorized = scheme.lower() == 'basic' and user == 'operator' and hmac.compare_digest(password.encode(), token.encode())
+        except (ValueError, UnicodeError):
+            authorized = False
+        if not authorized:
+            return Response(status_code=401, headers={'WWW-Authenticate': 'Basic realm="Tripwire"'})
+    elif request.client is None or request.client.host not in ('127.0.0.1', '::1', 'testclient'):
+        return Response('Remote camera access requires TRIPWIRE_TOKEN', status_code=403)
+    return await call_next(request)
+
 
 class WebStreamEngine:
     def __init__(self):
@@ -47,11 +70,12 @@ class WebStreamEngine:
         }
         self.active_feed = "template_tripwire"
         self.conf = 0.35
-        self.use_pose = True
+        self.use_pose = False
 
         # Load models
         pose_model_path = Path("yolov8n-pose.pt")
         self.detector_pose = YOLO(str(pose_model_path)) if pose_model_path.exists() else None
+        self.use_pose = self.detector_pose is not None
         self.detector_standard = YOLO("yolov8n.pt")
         self.pose_classifier = PoseKineticClassifier(keypoint_conf_threshold=0.35)
 
@@ -65,11 +89,6 @@ class WebStreamEngine:
         )
         self.radar = BEVRadarRenderer(radar_size=480, world_extent_m=20.0, grid_step_m=2.0)
         self.transformer = HomographyTransformer()
-        calib_file = Path("data/calibration.json")
-        if calib_file.exists():
-            self.transformer = HomographyTransformer.load_calibration(calib_file)
-        else:
-            self.transformer.set_homography(np.eye(3))
 
         self.zones = [
             MetricZone3D("z1", "RESTRICTED VAULT", "polygon", [(3.5, 1.2), (7.5, 1.2), (7.5, 2.8), (3.5, 2.8)]),
@@ -87,7 +106,7 @@ class WebStreamEngine:
         cv2.putText(frame, "WARNING: " + reason, (30, 220), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 140, 255), 2, cv2.LINE_AA)
         cv2.putText(frame, f"Feed: [{self.active_feed}] | Auto-reconnecting...", (30, 260),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (160, 160, 160), 1, cv2.LINE_AA)
-        radar_img = self.radar.render(self.zones, [])
+        radar_img = self.radar.render(self.zones if self.transformer.is_calibrated else [], [])
         dual_view = BEVRadarRenderer.create_dual_view(frame, radar_img)
         ret_enc, buffer = cv2.imencode(".jpg", dual_view)
         return buffer.tobytes() if ret_enc else b""
@@ -111,17 +130,18 @@ class WebStreamEngine:
         except Exception:
             self.cap = None
 
-        self.tracker = MultiTargetTracker(
-            min_hits=2,
-            max_age=15,
-            iou_threshold=0.3,
-            high_conf_threshold=0.50,
-            low_conf_threshold=0.15,
-            ema_alpha=0.35
-        )
+        self.clock = FrameClock(self.cap, live=str(src).isdigit() or '://' in str(src)) if self.cap is not None else None
+        size = (int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))) if self.cap is not None else (0, 0)
+        self.transformer = HomographyTransformer.for_source(src, size)
+        self.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=.3)
+        self.monitor = ZoneMonitor()
+        self.latest_jpeg = None
+        self.last_frame_time = float('-inf')
 
     def set_feed(self, feed_name: str):
         with self.lock:
+            if feed_name not in self.videos:
+                raise ValueError("Unknown video feed")
             if feed_name in self.videos:
                 self.active_feed = feed_name
                 self._init_cap()
@@ -129,14 +149,21 @@ class WebStreamEngine:
     def toggle_pose(self, enabled: Optional[bool] = None) -> bool:
         with self.lock:
             if enabled is not None:
-                self.use_pose = enabled
+                self.use_pose = enabled and self.detector_pose is not None
             else:
-                self.use_pose = not self.use_pose
+                self.use_pose = not self.use_pose and self.detector_pose is not None
+            self.latest_jpeg = None
             return self.use_pose
 
     def get_frame(self) -> bytes:
+        # Fix #12: hold the lock for the ENTIRE read + infer + track cycle so
+        # two concurrent subscribers cannot race on the same capture and tracker.
+        # This serialises all callers; the first request fully processes one frame
+        # before the next caller enters, which keeps tracker state consistent.
         with self.lock:
             now = time.time()
+            if self.latest_jpeg is not None and time.monotonic() - self.last_frame_time < self.clock.interval:
+                return self.latest_jpeg
             if not self.cap or not self.cap.isOpened():
                 if (now - self.last_reconnect_time) > 2.0:
                     self.last_reconnect_time = now
@@ -155,6 +182,9 @@ class WebStreamEngine:
                 if not src_val.isdigit():
                     try:
                         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        self.tracker = MultiTargetTracker(min_hits=2)
+                        self.monitor = ZoneMonitor()
+                        self.clock = FrameClock(self.cap)
                         ret, frame = self.cap.read()
                     except Exception:
                         ret, frame = False, None
@@ -168,11 +198,13 @@ class WebStreamEngine:
                     self.last_reconnect_time = now
                     return self._generate_disconnected_frame("CAMERA FEED DISCONNECTED")
 
-            # Model Inference
+            elapsed_dt = self.clock.tick()
+
+            # Model Inference — inside the lock so feed switches cannot insert
+            # a stale-feed detection into the newly-reset tracker (fix #12).
             is_pose_active = self.use_pose and (self.detector_pose is not None)
             active_detector = self.detector_pose if is_pose_active else self.detector_standard
 
-            # Down to 0.15 for ByteTrack Two-Stage Association with torch inference mode and imgsz=480 for reduced latency
             with torch.inference_mode():
                 results = active_detector(frame, conf=0.15, imgsz=480, verbose=False)
             detections = []
@@ -199,34 +231,16 @@ class WebStreamEngine:
             tracks = self.tracker.update(
                 detections,
                 homography_transformer=self.transformer,
-                pose_classifier=self.pose_classifier if is_pose_active else None
+                pose_classifier=self.pose_classifier if is_pose_active else None,
+                zones=self.zones, elapsed_dt=elapsed_dt
             )
+            alarm_states, _ = self.monitor.update(tracks, self.zones, elapsed_dt)
             radar_tracks = []
             for trk in tracks:
                 w_pos = trk.get("world_pos")
-                is_breach = False
-                posture = trk.get("posture", "walking")
-                threat_level = trk.get("threat_level", 1)
-
-                # Spatial Zone Breaches
-                if w_pos:
-                    for z in self.zones:
-                        if z.zone_type == "tripwire":
-                            world_trail = trk.get("world_trail", [])
-                            if len(world_trail) >= 2:
-                                crossing = z.check_tripwire_crossing(world_trail[-2], world_trail[-1])
-                                if crossing is not None:
-                                    is_breach = True
-                                    break
-                        elif z.contains_point(w_pos[0], w_pos[1]):
-                            is_breach = True
-                            break
-
-                # Threat / Kinetic Escalation
-                if threat_level >= 7 or posture in ("climbing", "crawling", "fallen"):
-                    is_breach = True
-
-                speed_kmh = float(trk.get("speed_kmh", trk.get("speed", 0.0)))
+                is_breach = alarm_states[trk['track_id']]['is_breaching']
+                posture = trk.get('posture', 'unknown')
+                speed_kmh = float(trk.get("speed", 0.0))
                 radar_tracks.append({
                     "track_id": trk["track_id"],
                     "world_pos": w_pos,
@@ -244,18 +258,21 @@ class WebStreamEngine:
                 x1, y1, x2, y2 = map(int, trk["bbox"])
                 box_color = (0, 0, 255) if is_breach else (0, 240, 255)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
-            
-                label_text = f"#{trk['track_id']} | {posture.upper()} | {speed_kmh:.1f} km/h"
+
+                label_text = f"#{trk['track_id']} | {posture.upper()} | " + (f"{speed_kmh:.1f} km/h" if w_pos is not None else "speed unavailable")
                 cv2.putText(frame, label_text, (x1, max(16, y1 - 8)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.52, box_color, 2)
 
-            radar_img = self.radar.render(self.zones, radar_tracks)
+            radar_img = self.radar.render(self.zones if self.transformer.is_calibrated else [], radar_tracks,
+                                          title='GROUND RADAR' if self.transformer.is_calibrated else 'UNCALIBRATED - METRIC ALARMS DISABLED')
             dual_view = BEVRadarRenderer.create_dual_view(frame, radar_img)
-        
+
             # Resize for responsive web streaming
             dual_view_resized = cv2.resize(dual_view, (1200, 500))
             _, jpeg = cv2.imencode(".jpg", dual_view_resized, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            return jpeg.tobytes()
+            self.latest_jpeg = jpeg.tobytes()
+            self.last_frame_time = time.monotonic()
+            return self.latest_jpeg
 
 engine = WebStreamEngine()
 
@@ -317,7 +334,7 @@ HTML_PAGE = """
     </div>
     <div class="card">
       <div class="card-label">Action Classification</div>
-      <div class="card-val" id="poseCard">17-Joint Pose AI</div>
+      <div class="card-val" id="poseCard">Pose available when weights are installed</div>
     </div>
     <div class="card">
       <div class="card-label">Ground Grid Extent</div>
@@ -329,23 +346,17 @@ HTML_PAGE = """
     function changeFeed(val) {
       fetch('/api/switch_feed?feed=' + val, { method: 'POST' });
     }
-    function togglePose() {
-      fetch('/api/toggle_pose', { method: 'POST' })
-        .then(r => r.json())
-        .then(d => {
-          const btn = document.getElementById('poseBtn');
-          const card = document.getElementById('poseCard');
-          if (d.use_pose) {
-            btn.innerText = '⚡ Pose Kinetics: ON';
-            btn.className = 'btn-pose-active';
-            card.innerText = '17-Joint Pose AI';
-          } else {
-            btn.innerText = '⚡ Pose Kinetics: OFF';
-            btn.className = '';
-            card.innerText = 'YOLOv8-Nano';
-          }
-        });
+    function showPose(d) {
+      const btn = document.getElementById('poseBtn');
+      btn.innerText = d.available === false ? 'Pose unavailable' : 'Pose Kinetics: ' + (d.use_pose ? 'ON' : 'OFF');
+      btn.disabled = d.available === false;
+      btn.className = d.use_pose ? 'btn-pose-active' : '';
+      document.getElementById('poseCard').innerText = d.use_pose ? '17-Joint Pose AI' : 'YOLOv8-Nano';
     }
+    function togglePose() {
+      fetch('/api/toggle_pose', { method: 'POST' }).then(r => r.json()).then(showPose);
+    }
+    fetch('/api/toggle_pose').then(r => r.json()).then(showPose);
   </script>
 </body>
 </html>
@@ -357,18 +368,20 @@ def get_dashboard():
 
 @app.post("/api/switch_feed")
 def switch_feed(feed: str):
-    engine.set_feed(feed)
-    return {"status": "ok", "feed": feed}
+    try:
+        engine.set_feed(feed)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok", "feed": engine.active_feed}
 
 @app.post("/api/toggle_pose")
 def toggle_pose():
     state = engine.toggle_pose()
-    return {"use_pose": state}
+    return {"use_pose": state, "available": engine.detector_pose is not None}
 
 @app.get("/api/toggle_pose")
 def get_toggle_pose():
-    state = engine.toggle_pose()
-    return {"use_pose": state}
+    return {"use_pose": engine.use_pose, "available": engine.detector_pose is not None}
 
 @app.get("/stream")
 def video_stream():
@@ -386,5 +399,11 @@ def video_stream():
     )
 
 if __name__ == "__main__":
-    print("🚀 Starting Tripwire Live Web Demo at http://localhost:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Fix #11: default to loopback (127.0.0.1) so the demo is not reachable
+    # from other hosts on the network without an explicit operator choice.
+    import os
+    host = os.environ.get("TRIPWIRE_HOST", "127.0.0.1")
+    print(f"🚀 Starting Tripwire Live Web Demo at http://{host}:8000")
+    if host not in ('127.0.0.1', 'localhost', '::1') and not os.environ.get('TRIPWIRE_TOKEN'):
+        raise RuntimeError('Set TRIPWIRE_TOKEN before exposing camera feeds to the network')
+    uvicorn.run(app, host=host, port=8000, proxy_headers=False)

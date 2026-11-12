@@ -11,3 +11,4 @@ __all__ = [
     "draw_pose_skeleton",
     "extract_and_classify_yolo_pose"
 ]
+

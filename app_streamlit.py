@@ -14,7 +14,7 @@ except ImportError:
     st = None
 
 def get_width_kwargs(stretch: bool = True):
-    """Provides version-compatible kwargs across Streamlit versions (width='stretch' vs use_container_width=True)."""
+    """Provides version-compatible kwargs for BUTTONS only across Streamlit versions."""
     try:
         if st is not None and "width" in inspect.signature(st.button).parameters:
             return {"width": "stretch" if stretch else "content"}
@@ -24,12 +24,21 @@ def get_width_kwargs(stretch: bool = True):
 
 WIDTH_KWARGS = get_width_kwargs()
 
+# Fix #1: st.image does NOT accept 'width="stretch"' — always use use_container_width.
+IMAGE_KWARGS = {"use_container_width": True}
+# Fix #1: st.dataframe also uses use_container_width, not width=.
+DATAFRAME_KWARGS = {"use_container_width": True}
+
 from ultralytics import YOLO
 from cv_core.geometry.homography import HomographyTransformer
 from cv_core.geometry.zones_3d import MetricZone3D
 from cv_core.tracking.tracker import MultiTargetTracker
 from cv_core.kinetics.pose_classifier import PoseKineticClassifier, draw_pose_skeleton
 from cv_core.visualizer.bev_radar import BEVRadarRenderer
+from cv_core.video import FrameClock
+from cv_core.monitoring import ZoneMonitor
+import hashlib
+import tempfile
 
 @st.cache_resource
 def get_object_detector():
@@ -40,10 +49,6 @@ def get_object_detector():
 def get_pose_detector():
     """Caches YOLOv8 pose detector in memory for kinetic threat classification."""
     return YOLO("yolov8n-pose.pt")
-
-def draw_skeleton(frame: np.ndarray, keypoints: np.ndarray, conf_thresh: float = 0.35):
-    """Renders 17-point COCO human pose skeleton overlay on the camera frame."""
-    return draw_pose_skeleton(frame, keypoints, conf_thresh=conf_thresh)
 
 def main():
     if st is None:
@@ -66,10 +71,8 @@ def main():
         st.session_state.current_feed = None
     if "tracker" not in st.session_state:
         st.session_state.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
-    if "dwell_history" not in st.session_state:
-        st.session_state.dwell_history = {}
-    if "tripwire_latches" not in st.session_state:
-        st.session_state.tripwire_latches = {}
+    if "zone_monitor" not in st.session_state:
+        st.session_state.zone_monitor = ZoneMonitor()
     if "incident_log" not in st.session_state:
         st.session_state.incident_log = []
     if "evidence_locker" not in st.session_state:
@@ -96,9 +99,9 @@ def main():
     st.markdown('<div class="main-header">🛡️ TRIP-WIRE: Cyber SOC Spatial Intelligence & BEV Radar HUD</div>', unsafe_allow_html=True)
     st.markdown("""
         <div class="sub-header">
-            <span class="soc-badge badge-live">● SYSTEM ARMED</span>
-            <span class="soc-badge badge-dlt">DLT HOMOGRAPHY LOCKED (3x3)</span>
-            <span class="soc-badge badge-kalman">4D KALMAN STATE CONVERGED</span>
+            <span class="soc-badge badge-live">● SURVEILLANCE DEMO</span>
+            <span class="soc-badge badge-dlt">CAMERA CALIBRATION REQUIRED</span>
+            <span class="soc-badge badge-kalman">4D KALMAN TRACKING</span>
             <span>Real-Time Planar Homography, Constant-Velocity State Estimation & Threat Kinetics</span>
         </div>
     """, unsafe_allow_html=True)
@@ -149,11 +152,20 @@ def main():
     elif feed_option == "Upload Custom MP4":
         uploaded_file = st.sidebar.file_uploader("Upload video file", type=["mp4", "avi", "mov"])
         if uploaded_file:
-            upload_dir = Path("data/videos")
-            upload_dir.mkdir(parents=True, exist_ok=True)
-            temp_path = upload_dir / f"uploaded_{uploaded_file.name}"
-            with open(temp_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
+            if '_upload_dir' not in st.session_state:
+                st.session_state._upload_dir = tempfile.TemporaryDirectory(prefix='tripwire_upload_')
+            content = uploaded_file.getbuffer()
+            digest = hashlib.sha256(content).hexdigest()
+            temp_path = Path(st.session_state._upload_dir.name) / (digest + Path(uploaded_file.name).suffix.lower())
+            previous_upload = st.session_state.get('_upload_path')
+            if previous_upload and previous_upload != str(temp_path):
+                if st.session_state.cap is not None:
+                    st.session_state.cap.release()
+                    st.session_state.cap = None
+                Path(previous_upload).unlink(missing_ok=True)
+            if not temp_path.exists():
+                temp_path.write_bytes(content)
+            st.session_state._upload_path = str(temp_path)
             video_path = str(temp_path)
 
     conf_thresh = st.sidebar.slider("Detection Confidence", min_value=0.1, max_value=0.9, value=0.35, step=0.05)
@@ -161,7 +173,7 @@ def main():
         "Inference Resolution (imgsz)",
         options=[384, 480, 640],
         value=480,
-        help="Lower resolutions (384p/480p) reduce neural compute latency by ~50% with near-identical person detection precision."
+        help="Lower resolutions reduce compute cost; validate accuracy for your camera."
     )
     speed_alarm = st.sidebar.slider("Speed Alarm Threshold (km/h)", min_value=1.0, max_value=25.0, value=5.0, step=0.5)
     dwell_confirm_sec = st.sidebar.slider(
@@ -237,16 +249,20 @@ def main():
     evidence_placeholder = st.empty()
     table_placeholder = st.empty()
 
+    calibration_upload = st.sidebar.file_uploader('Calibration JSON for this feed', type=['json'])
+
     # Handle Feed Switching
     feed_changed = (st.session_state.current_feed != video_path)
-    if feed_changed and st.session_state.cap is not None:
+    if feed_changed:
         try:
-            st.session_state.cap.release()
+            if st.session_state.cap is not None:
+                st.session_state.cap.release()
         except Exception:
             pass
         st.session_state.cap = None
         st.session_state.current_feed = video_path
         st.session_state.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
+        st.session_state.zone_monitor = ZoneMonitor()
 
     if st.session_state.is_running and video_path is not None:
         if st.session_state.cap is None or not st.session_state.cap.isOpened():
@@ -274,19 +290,39 @@ def main():
 
             st.session_state.cap = cap
             st.session_state.current_feed = video_path
+            st.session_state.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
+            st.session_state.zone_monitor = ZoneMonitor()
 
         cap = st.session_state.cap
+        clock = FrameClock(cap, live=isinstance(video_path, int) or '://' in str(video_path))
         detector = get_pose_detector() if use_pose else get_object_detector()
         pose_classifier = PoseKineticClassifier(keypoint_conf_threshold=0.35) if use_pose else None
         tracker = st.session_state.tracker
         radar = BEVRadarRenderer(radar_size=480, world_extent_m=20.0, grid_step_m=2.0)
         
-        transformer = HomographyTransformer()
-        calib_file = Path("data/calibration.json")
-        if calib_file.exists():
-            transformer = HomographyTransformer.load_calibration(calib_file)
-        else:
-            transformer.set_homography(np.eye(3))
+        image_size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+        calibration_path = None
+        if calibration_upload is not None:
+            if '_calibration_dir' not in st.session_state:
+                st.session_state._calibration_dir = tempfile.TemporaryDirectory(prefix='tripwire_calibration_')
+            calibration_path = Path(st.session_state._calibration_dir.name) / 'calibration.json'
+            calibration_path.write_bytes(calibration_upload.getbuffer())
+        try:
+            transformer = HomographyTransformer.for_source(video_path, image_size, calibration_path)
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            status_text.error(f'Invalid calibration: {exc}')
+            st.session_state.is_running = False
+            cap.release()
+            st.session_state.cap = None
+            return
+        if not transformer.is_calibrated:
+            st.warning('This feed is uncalibrated. Ground positions, metric speed, and spatial alarms are disabled. Select a calibration JSON for this camera.')
+        calibration_key = (str(video_path), transformer.H.tobytes() if transformer.is_calibrated else None, zone_preset, use_pose)
+        if st.session_state.get('_calibration_key') != calibration_key:
+            st.session_state.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
+            st.session_state.zone_monitor = ZoneMonitor()
+            st.session_state._calibration_key = calibration_key
+        tracker = st.session_state.tracker
 
         if zone_preset == "Demo Stress Test (Center Hallway)":
             zones = [
@@ -318,8 +354,8 @@ def main():
         frame_count = 0
         t0 = time.time()
 
-        # Continuous processing loop
         try:
+            # Continuous processing loop
             while st.session_state.is_running and cap.isOpened():
                 try:
                     ret, frame = cap.read()
@@ -330,6 +366,10 @@ def main():
                     if isinstance(video_path, str) and not video_path.isdigit():
                         try:
                             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                            tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
+                            st.session_state.tracker = tracker
+                            st.session_state.zone_monitor = ZoneMonitor()
+                            clock = FrameClock(cap)
                             ret, frame = cap.read()
                         except Exception:
                             ret, frame = False, None
@@ -345,29 +385,33 @@ def main():
                             st.session_state.cap = None
                         break
 
+                frame_elapsed_dt = clock.tick()
                 frame_count += 1
                 t_frame_start = time.time()
+
+                # Fix #18: run inference on the ORIGINAL clean frame, then draw
+                # grid/zones/annotations only on a display copy.
+                display_frame = frame.copy()
 
                 # Grid & Security Zone Projection on Camera View
                 if transformer.is_calibrated:
                     if show_grid:
-                        segments = transformer.project_ground_grid_to_image(frame.shape[:2], grid_step_m=2.0)
-                        grid_overlay = frame.copy()
+                        segments = transformer.project_ground_grid_to_image(display_frame.shape[:2], grid_step_m=2.0)
+                        grid_overlay = display_frame.copy()
                         for pt1, pt2 in segments:
                             cv2.line(grid_overlay, pt1, pt2, (60, 80, 90), 1, cv2.LINE_AA)
-                        cv2.addWeighted(grid_overlay, 0.4, frame, 0.6, 0, frame)
+                        cv2.addWeighted(grid_overlay, 0.4, display_frame, 0.6, 0, display_frame)
 
                     for z in zones:
                         if z.zone_type == "polygon":
                             try:
                                 pts = [transformer.world_to_image(x, y) for x, y in z.world_coords]
                                 pts_np = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
-                                overlay = frame.copy()
+                                overlay = display_frame.copy()
                                 cv2.fillPoly(overlay, [pts_np], (0, 140, 255))
-                                cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
-                                cv2.polylines(frame, [pts_np], True, (0, 165, 255), 2, cv2.LINE_AA)
-                                label_pt = pts[min(len(pts) - 1, 3)]
-                                cv2.putText(frame, z.name, (int(label_pt[0]) + 10, int(label_pt[1]) + 20),
+                                cv2.addWeighted(overlay, 0.25, display_frame, 0.75, 0, display_frame)
+                                cv2.polylines(display_frame, [pts_np], True, (0, 165, 255), 2, cv2.LINE_AA)
+                                cv2.putText(display_frame, z.name, (int(pts[3][0]) + 10, int(pts[3][1]) + 20),
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 255), 2, cv2.LINE_AA)
                             except Exception:
                                 pass
@@ -375,16 +419,16 @@ def main():
                             try:
                                 p1 = transformer.world_to_image(*z.world_coords[0])
                                 p2 = transformer.world_to_image(*z.world_coords[1])
-                                cv2.line(frame, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), (0, 0, 255), 2, cv2.LINE_AA)
-                                cv2.putText(frame, z.name, (int(p1[0]) + 15, int(p1[1]) - 6),
+                                cv2.line(display_frame, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), (0, 0, 255), 2, cv2.LINE_AA)
+                                cv2.putText(display_frame, z.name, (int(p1[0]) + 15, int(p1[1]) - 6),
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2, cv2.LINE_AA)
                             except Exception:
                                 pass
 
-                # Deep Visual Perception
+                # Deep Visual Perception — always infer on the ORIGINAL clean frame (fix #18)
                 t_infer_start = time.time()
                 with torch.inference_mode():
-                    results = detector(frame, classes=[0], conf=conf_thresh, imgsz=infer_imgsz, verbose=False)
+                    results = detector(frame, classes=[0], conf=min(conf_thresh, tracker.low_conf_threshold), imgsz=infer_imgsz, verbose=False)
                 t_infer_end = time.time()
                 infer_ms = (t_infer_end - t_infer_start) * 1000.0
 
@@ -408,7 +452,9 @@ def main():
                 active_tracks = tracker.update(
                     detections,
                     homography_transformer=transformer,
-                    pose_classifier=pose_classifier
+                    pose_classifier=pose_classifier,
+                    zones=zones,                   # Fix #5: pass zones for proximity computation
+                    elapsed_dt=frame_elapsed_dt    # Fix #2: pass actual source-FPS interval
                 )
                 t_track_end = time.time()
                 track_ms = (t_track_end - t_track_start) * 1000.0
@@ -416,66 +462,26 @@ def main():
                 radar_tracks = []
                 breach_count = 0
                 now_ts = time.time()
-                frame_dt = 1.0 / 20.0
-
-                dwell_map = st.session_state.dwell_history
-                trip_latches = st.session_state.tripwire_latches
-                current_active_pairs = set()
+                alarm_states, frame_events = st.session_state.zone_monitor.update(
+                    active_tracks, zones, frame_elapsed_dt, dwell_confirm_sec, speed_alarm)
+                for event in frame_events:
+                    st.session_state.incident_log.append({
+                        'Timestamp': time.strftime('%H:%M:%S'), 'Track ID': f"#{event['track_id']}",
+                        'Event': event['event'], 'Zone': event['zone_id'], 'Incident Reason': event['reason']})
+                st.session_state.incident_log = st.session_state.incident_log[-100:]
 
                 for trk in active_tracks:
                     tid = trk["track_id"]
                     w_pos = trk.get("world_pos")
-                    is_confirmed_breach = False
-                    is_monitoring = False
-                    breach_reasons = []
-
-                    # Draw Pose Skeleton if available
-                    if use_pose and trk.get("keypoints") is not None:
-                        draw_skeleton(frame, trk["keypoints"])
-
-                    # Spatial Threat Evaluation
-                    if w_pos:
-                        for z in zones:
-                            if z.zone_type == "tripwire":
-                                world_trail = trk.get("world_trail", [])
-                                if len(world_trail) >= 2:
-                                    crossing = z.check_tripwire_crossing(world_trail[-2], world_trail[-1])
-                                    if crossing is not None:
-                                        trip_latches[(tid, z.zone_id)] = now_ts
-                            
-                                latch_time = trip_latches.get((tid, z.zone_id), 0.0)
-                                if (now_ts - latch_time) < 3.0:
-                                    is_confirmed_breach = True
-                                    breach_reasons.append(f"Crossed {z.name}")
-                                    break
-                            elif z.contains_point(w_pos[0], w_pos[1]):
-                                current_active_pairs.add((tid, z.zone_id))
-                                prev_dwell = dwell_map.get((tid, z.zone_id), 0.0)
-                                new_dwell = prev_dwell + frame_dt
-                                dwell_map[(tid, z.zone_id)] = new_dwell
-
-                                if new_dwell >= dwell_confirm_sec:
-                                    is_confirmed_breach = True
-                                    breach_reasons.append(f"Loitering in {z.name} ({new_dwell:.1f}s)")
-                                    break
-                                else:
-                                    is_monitoring = True
-                                    breach_reasons.append(f"Inside {z.name} ({new_dwell:.1f}s / {dwell_confirm_sec:.1f}s)")
-                                    break
-
-                    speed_kmh = float(trk.get("speed", 0.0))
-                    if speed_kmh < 0.8:
-                        speed_kmh = 0.0
-                    if speed_kmh > speed_alarm:
-                        is_confirmed_breach = True
-                        breach_reasons.append(f"Speeding ({speed_kmh:.1f}km/h)")
-
-                    # Kinetic Threat Escalation (Climbing or Crawling)
-                    threat_level = trk.get("threat_level", 1)
-                    posture_label = trk.get("posture", "walking")
-                    if threat_level >= 8:
-                        is_confirmed_breach = True
-                        breach_reasons.append(f"High Threat Action: {posture_label.upper()}")
+                    alarm = alarm_states[tid]
+                    is_confirmed_breach = alarm['is_breaching']
+                    is_monitoring = alarm['is_monitoring']
+                    breach_reasons = alarm['reasons']
+                    speed_kmh = float(trk.get('speed', 0))
+                    threat_level = trk.get('threat_level', 1)
+                    posture_label = trk.get('posture', 'unknown')
+                    if use_pose and trk.get('keypoints') is not None:
+                        draw_pose_skeleton(display_frame, trk['keypoints'])
 
                     if is_confirmed_breach:
                         breach_count += 1
@@ -501,64 +507,38 @@ def main():
                         color = (0, 255, 0)      # Green: Authorized Target
                         tag_prefix = "🟢"
 
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                
-                    tag_label = f"{tag_prefix} #{trk['track_id']} | {posture_label.upper()} | {speed_kmh:.1f}km/h"
+                    # Fix #18: draw bounding box and labels on display_frame, not on the YOLO input
+                    cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
+
+                    speed_label = f"{speed_kmh:.1f}km/h" if w_pos is not None else "speed unavailable"
+                    tag_label = f"{tag_prefix} #{trk['track_id']} | {posture_label.upper()} | {speed_label}"
                     if breach_reasons:
                         tag_label += f" | {breach_reasons[0]}"
-                    cv2.putText(frame, tag_label, (x1, max(16, y1 - 8)),
+                    cv2.putText(display_frame, tag_label, (x1, max(16, y1 - 8)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.48, color, 2)
 
-                    # Capture Intruder Snapshot into Evidence Locker on confirmed breach
-                    if is_confirmed_breach:
+                    new_alarm = next((e for e in frame_events if e['track_id'] == tid and
+                                      e['event'] in ('LOITER', 'CROSS_IN', 'CROSS_OUT', 'SPEED_START', 'ACTION_START')), None)
+                    if new_alarm is not None:
                         ih, iw = frame.shape[:2]
-                        cx1, cy1 = max(0, x1), max(0, y1)
-                        cx2, cy2 = min(iw, x2), min(ih, y2)
+                        cx1, cy1, cx2, cy2 = max(0, x1), max(0, y1), min(iw, x2), min(ih, y2)
                         if cx2 > cx1 and cy2 > cy1:
-                            if len(st.session_state.evidence_locker) == 0 or (now_ts - st.session_state.evidence_locker[-1]["ts"]) > 2.0:
-                                intruder_crop = frame[cy1:cy2, cx1:cx2].copy()
-                                crop_rgb = cv2.cvtColor(intruder_crop, cv2.COLOR_BGR2RGB)
-                                st.session_state.evidence_locker.append({
-                                    "ts": now_ts,
-                                    "time_str": time.strftime("%H:%M:%S"),
-                                    "track_id": trk["track_id"],
-                                    "action": posture_label.upper(),
-                                    "threat": threat_level,
-                                    "reason": breach_reasons[0] if breach_reasons else "Restricted Vault Intrusion",
-                                    "speed": f"{speed_kmh:.1f} km/h",
-                                    "image": crop_rgb
-                                })
-                                if len(st.session_state.evidence_locker) > 8:
-                                    st.session_state.evidence_locker.pop(0)
-
-                                st.session_state.incident_log.append({
-                                    "Timestamp": time.strftime("%H:%M:%S"),
-                                    "Track ID": f"#{trk['track_id']}",
-                                    "Action / Posture": posture_label.upper(),
-                                    "Threat Score": f"{threat_level}/10",
-                                    "Incident Reason": breach_reasons[0] if breach_reasons else "Zone Intrusion",
-                                    "Ground Speed": f"{speed_kmh:.1f} km/h",
-                                    "Certainty": "CONFIRMED (98.4%)"
-                                })
-                                if len(st.session_state.incident_log) > 100:
-                                    st.session_state.incident_log.pop(0)
-
-                # Cleanup expired dwell times and latches
-                active_tids = {trk["track_id"] for trk in active_tracks}
-                for k in list(dwell_map.keys()):
-                    if k[0] not in active_tids or k not in current_active_pairs:
-                        dwell_map.pop(k, None)
-                for k in list(trip_latches.keys()):
-                    if k[0] not in active_tids or (now_ts - trip_latches[k]) > 4.0:
-                        trip_latches.pop(k, None)
+                            st.session_state.evidence_locker.append({
+                                'ts': now_ts, 'time_str': time.strftime('%H:%M:%S'), 'track_id': tid,
+                                'action': posture_label.upper(), 'threat': threat_level,
+                                'reason': new_alarm['reason'], 'speed': speed_label,
+                                'image': cv2.cvtColor(frame[cy1:cy2, cx1:cx2], cv2.COLOR_BGR2RGB)})
+                            st.session_state.evidence_locker = st.session_state.evidence_locker[-8:]
 
                 # BEV Radar Rendering
-                radar_img = radar.render(zones, radar_tracks)
-                dual_view = BEVRadarRenderer.create_dual_view(frame, radar_img)
+                radar_img = radar.render(zones if transformer.is_calibrated else [], radar_tracks,
+                                         title="GROUND RADAR" if transformer.is_calibrated else "UNCALIBRATED - METRIC ALARMS DISABLED")
+                # Fix #18: compose with display_frame (annotated copy), not the raw inference frame
+                dual_view = BEVRadarRenderer.create_dual_view(display_frame, radar_img)
 
                 dual_view_resized = cv2.resize(dual_view, (1280, 480), interpolation=cv2.INTER_AREA)
                 dual_view_rgb = cv2.cvtColor(dual_view_resized, cv2.COLOR_BGR2RGB)
-                dual_view_placeholder.image(dual_view_rgb, channels="RGB", **WIDTH_KWARGS)
+                dual_view_placeholder.image(dual_view_rgb, channels="RGB", **IMAGE_KWARGS)
 
                 elapsed = time.time() - t0
                 fps = frame_count / max(0.001, elapsed)
@@ -578,23 +558,20 @@ def main():
                         cols = st.columns(min(4, len(st.session_state.evidence_locker)))
                         for idx_snap, snap in enumerate(reversed(st.session_state.evidence_locker[-4:])):
                             with cols[idx_snap % 4]:
-                                st.image(snap["image"], caption=f"ID #{snap['track_id']} | {snap['time_str']} | {snap['action']}\n{snap['reason']}", **WIDTH_KWARGS)
+                                st.image(snap["image"], caption=f"ID #{snap['track_id']} | {snap['time_str']} | {snap['action']}\n{snap['reason']}", **IMAGE_KWARGS)
 
                 if st.session_state.incident_log:
                     with table_placeholder.container():
                         st.markdown(f"#### 📋 Real-Time Incident Audit Log ({len(st.session_state.incident_log)} Events Recorded)")
                         df_log = pd.DataFrame(st.session_state.incident_log[::-1])
-                        st.dataframe(df_log, height=180, **WIDTH_KWARGS)
+                        st.dataframe(df_log, height=180, **DATAFRAME_KWARGS)
                         st.caption("ℹ️ *To export CSV or JSON forensics reports, click **⏹️ Stop Feed** in the sidebar or expand **📥 Export Incident Logs**.*")
 
                 time.sleep(0.015)
+
         finally:
-            if st.session_state.cap is not None:
-                try:
-                    st.session_state.cap.release()
-                except Exception:
-                    pass
-                st.session_state.cap = None
+            cap.release()
+            st.session_state.cap = None
 
     elif not st.session_state.is_running:
         status_text.warning("⏸️ Surveillance pipeline is paused. Click **▶️ Start Live** in the sidebar to run.")
@@ -604,13 +581,13 @@ def main():
                 cols = st.columns(min(4, len(st.session_state.evidence_locker)))
                 for idx_snap, snap in enumerate(reversed(st.session_state.evidence_locker[-4:])):
                     with cols[idx_snap % 4]:
-                        st.image(snap["image"], caption=f"ID #{snap['track_id']} | {snap['time_str']} | {snap['action']}\n{snap['reason']}", **WIDTH_KWARGS)
+                        st.image(snap["image"], caption=f"ID #{snap['track_id']} | {snap['time_str']} | {snap['action']}\n{snap['reason']}", **IMAGE_KWARGS)
 
         if st.session_state.incident_log:
             with table_placeholder.container():
                 st.markdown(f"#### 📋 Real-Time Incident Audit Log ({len(st.session_state.incident_log)} Total Events)")
                 df_log = pd.DataFrame(st.session_state.incident_log[::-1])
-                st.dataframe(df_log, height=180, **WIDTH_KWARGS)
+                st.dataframe(df_log, height=180, **DATAFRAME_KWARGS)
                 col_csv, col_json = st.columns(2)
                 with col_csv:
                     csv_data = df_log.to_csv(index=False).encode('utf-8')

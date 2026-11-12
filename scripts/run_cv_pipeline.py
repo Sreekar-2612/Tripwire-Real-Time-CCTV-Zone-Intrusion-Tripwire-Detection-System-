@@ -16,36 +16,27 @@ from cv_core.geometry.homography import HomographyTransformer
 from cv_core.geometry.zones_3d import MetricZone3D
 from cv_core.tracking.tracker import MultiTargetTracker
 from cv_core.visualizer.bev_radar import BEVRadarRenderer
-from cv_core.kinetics.pose_classifier import PoseKineticClassifier, draw_pose_skeleton
+from cv_core.kinetics.pose_classifier import PoseKineticClassifier
+from cv_core.video import FrameClock
+from cv_core.monitoring import ZoneMonitor
 
 def run_cv_engine(
     video_source: str,
     calibration_file: str = None,
     output_video: str = None,
-    show_window: bool = True
+    show_window: bool = True,
+    use_pose: bool = False
 ):
     print("="*75)
     print("🚀 TRIPWIRE COMPUTER VISION ENGINE — BEV RADAR & KINETIC SURVEILLANCE")
     print("="*75)
 
-    # 1. Initialize Homography Transformer
-    transformer = HomographyTransformer()
-    if calibration_file and Path(calibration_file).exists():
-        transformer = HomographyTransformer.load_calibration(calibration_file)
-        print(f"✅ Loaded Ground Homography Calibration from '{calibration_file}'")
-    elif Path("data/calibration.json").exists():
-        transformer = HomographyTransformer.load_calibration("data/calibration.json")
-        print("✅ Loaded default Ground Homography Calibration from 'data/calibration.json'")
-    else:
-        print("ℹ️ No calibration specified. Using default ground bounds (20m x 20m).")
-        # Default identity mapping for demonstration
-        transformer.set_homography(np.eye(3))
+    if output_video and Path(output_video).resolve() == Path(str(video_source)).resolve():
+        raise ValueError('Output video must not overwrite the input')
 
     # 2. Initialize Models & Tracker
     print("Loading YOLOv8 Detector & Tracker...")
-    pose_model_path = Path("yolov8n-pose.pt")
-    use_pose = pose_model_path.exists()
-    detector = YOLO(str(pose_model_path)) if use_pose else YOLO("yolov8n.pt")
+    detector = YOLO("yolov8n-pose.pt" if use_pose else "yolov8n.pt")
     tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
     pose_classifier = PoseKineticClassifier()
     radar = BEVRadarRenderer(radar_size=480, world_extent_m=20.0, grid_step_m=2.0)
@@ -57,21 +48,26 @@ def run_cv_engine(
     ]
 
     # Open Video Capture
-    if str(video_source).isdigit():
-        cap_src = int(video_source)
-        cap = cv2.VideoCapture(cap_src, cv2.CAP_DSHOW)
-        if not cap.isOpened():
-            cap = cv2.VideoCapture(cap_src)
-    else:
-        cap = cv2.VideoCapture(video_source)
+    cap_src = int(video_source) if str(video_source).isdigit() else video_source
+    cap = cv2.VideoCapture(cap_src)
     if not cap.isOpened():
         print(f"❌ Error: Could not open video source: {video_source}")
-        return
+        cap.release()
+        raise RuntimeError(f"Could not open video source: {video_source}")
 
-    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+    clock = FrameClock(cap, live=str(video_source).isdigit() or "://" in str(video_source))
+    fps = 1.0 / clock.interval
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 1280
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 720
 
+    try:
+        transformer = HomographyTransformer.for_source(video_source, (w, h), calibration_file)
+    except Exception:
+        cap.release()
+        raise
+    if not transformer.is_calibrated:
+        print('Uncalibrated feed: metric speed and spatial alarms are disabled.')
+    monitor = ZoneMonitor()
     writer = None
 
     frame_count = 0
@@ -83,55 +79,42 @@ def run_cv_engine(
             ret, frame = cap.read()
             if not ret or frame is None:
                 break
+            elapsed_dt = clock.tick()
             frame_count += 1
 
             # 1. YOLO Person Detection
-            results = detector(frame, classes=[0], conf=0.35, verbose=False)
+            results = detector(frame, classes=[0], conf=tracker.low_conf_threshold, verbose=False)
             detections = []
 
             for r in results:
                 boxes = r.boxes
                 if boxes is not None:
-                    has_kpts = use_pose and getattr(r, "keypoints", None) is not None and len(r.keypoints.data) > 0
-                    for idx_b, box in enumerate(boxes):
+                    for index, box in enumerate(boxes):
                         x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                         conf = float(box.conf[0].cpu().numpy())
                         foot_x = (x1 + x2) / 2.0
                         foot_y = y2
-                        kpt = None
-                        if has_kpts and idx_b < len(r.keypoints.data):
-                            kpt = r.keypoints.data[idx_b].cpu().numpy()
                         detections.append({
                             "bbox": [float(x1), float(y1), float(x2), float(y2)],
                             "confidence": conf,
                             "foot_point": (float(foot_x), float(foot_y)),
-                            "keypoints": kpt
+                            "keypoints": r.keypoints.data[index].cpu().numpy() if use_pose and r.keypoints is not None else None
                         })
 
             # 2. Multi-Target Tracking & Homography Projection
             active_tracks = tracker.update(
                 detections,
                 homography_transformer=transformer,
-                pose_classifier=pose_classifier
+                pose_classifier=pose_classifier if use_pose else None,
+                zones=ground_zones, elapsed_dt=elapsed_dt
             )
 
             # 3. Zone Breaches & Pose Kinetics
+            alarm_states, _ = monitor.update(active_tracks, ground_zones, elapsed_dt)
             radar_tracks = []
             for trk in active_tracks:
                 w_pos = trk.get("world_pos")
-                is_breaching = False
-                if w_pos:
-                    for z in ground_zones:
-                        if z.zone_type == "tripwire":
-                            world_trail = trk.get("world_trail", [])
-                            if len(world_trail) >= 2:
-                                crossing = z.check_tripwire_crossing(world_trail[-2], world_trail[-1])
-                                if crossing is not None:
-                                    is_breaching = True
-                                    break
-                        elif z.contains_point(w_pos[0], w_pos[1]):
-                            is_breaching = True
-                            break
+                is_breaching = alarm_states[trk['track_id']]['is_breaching']
 
                 speed_kmh = float(trk.get("speed", 0.0))
                 radar_tracks.append({
@@ -147,15 +130,14 @@ def run_cv_engine(
                 # Annotate perspective frame
                 x1, y1, x2, y2 = map(int, trk["bbox"])
                 box_color = (0, 0, 255) if is_breaching else (0, 230, 255)
-                if use_pose and trk.get("keypoints") is not None:
-                    draw_pose_skeleton(frame, trk["keypoints"])
                 cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
-                tag = f"#{trk['track_id']} | {speed_kmh:.1f} km/h"
+                tag = f"#{trk['track_id']} | " + (f"{speed_kmh:.1f} km/h" if w_pos is not None else "speed unavailable")
                 cv2.putText(frame, tag, (x1, max(18, y1 - 8)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.55, box_color, 2, cv2.LINE_AA)
 
             # 4. Render BEV Ground Radar Display
-            radar_canvas = radar.render(ground_zones, radar_tracks)
+            radar_canvas = radar.render(ground_zones if transformer.is_calibrated else [], radar_tracks,
+                                        title="GROUND RADAR" if transformer.is_calibrated else "UNCALIBRATED - METRIC ALARMS DISABLED")
 
             # 5. Composite Dual-View (Perspective + Radar)
             dual_view = BEVRadarRenderer.create_dual_view(frame, radar_canvas)
@@ -165,6 +147,8 @@ def run_cv_engine(
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                 dh, dw = dual_view.shape[:2]
                 writer = cv2.VideoWriter(output_video, fourcc, fps, (dw, dh))
+                if not writer.isOpened():
+                    raise RuntimeError(f"Could not open output video: {output_video}")
                 print(f"📹 Recording Dual-View output to: {output_video} ({dw}x{dh} @ {fps:.1f} FPS)")
 
             # Calculate FPS
@@ -185,7 +169,9 @@ def run_cv_engine(
         cap.release()
         if writer:
             writer.release()
-        cv2.destroyAllWindows()
+        # Fix #15: only clean up windows when a preview was actually created
+        if show_window:
+            cv2.destroyAllWindows()
         print(f"\n✅ Processing complete: {frame_count} frames processed.")
 
 if __name__ == "__main__":
@@ -194,11 +180,13 @@ if __name__ == "__main__":
     parser.add_argument("--calibration", type=str, default=None, help="Path to calibration.json")
     parser.add_argument("--output", type=str, default=None, help="Path to save dual-view output MP4")
     parser.add_argument("--no-preview", action="store_true", help="Disable GUI preview window")
+    parser.add_argument("--pose", action="store_true", help="Use pose weights for action recognition")
     args = parser.parse_args()
 
     run_cv_engine(
         video_source=args.source,
         calibration_file=args.calibration,
         output_video=args.output,
-        show_window=not args.no_preview
+        show_window=not args.no_preview,
+        use_pose=args.pose
     )

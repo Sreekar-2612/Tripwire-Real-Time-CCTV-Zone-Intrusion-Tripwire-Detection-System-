@@ -1,3 +1,5 @@
+> **Historical design notes, not validated performance evidence.** The quantitative claims and resume examples below predate the audit and are unverified. Do not present their accuracy, FPS, or alarm-reduction figures as measured results. Current implementation behavior and test evidence are documented in [README](README.md), [evaluation notes](evaluation/EVALUATION_REPORT.md), and [verification report](audit/VERIFICATION_REPORT.md).
+
 # TRIP-WIRE: Autonomous Spatial Intelligence, Metric Bird's Eye View (BEV) Radar & Threat Kinetics Engine
 ## Executive Portfolio Case Study & Engineering Whitepaper
 

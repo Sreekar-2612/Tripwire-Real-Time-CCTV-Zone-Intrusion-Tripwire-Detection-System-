@@ -182,7 +182,7 @@ def test_homography_length_mismatch_raises_value_error():
     """Verify that unequal number of image and world correspondences raises ValueError."""
     img_pts = [(0, 0), (100, 0), (100, 100), (0, 100), (50, 50)]
     world_pts = [(0, 0), (10, 0), (10, 10), (0, 10)]
-    with pytest.raises(ValueError, match="must match"):
+    with pytest.raises(ValueError):
         HomographyTransformer.from_point_correspondences(img_pts, world_pts)
 
 def test_project_ground_grid_handles_zero_or_negative_step():

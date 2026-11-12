@@ -29,7 +29,10 @@ class HomographyTransformer:
         """
         self.H: Optional[np.ndarray] = None
         self.H_inv: Optional[np.ndarray] = None
-        self.world_bounds = world_bounds or (0.0, 0.0, 20.0, 20.0)
+        self.world_bounds = tuple(world_bounds) if world_bounds is not None else (0.0, 0.0, 20.0, 20.0)
+        if (len(self.world_bounds) != 4 or not np.all(np.isfinite(self.world_bounds))
+                or self.world_bounds[2] <= self.world_bounds[0] or self.world_bounds[3] <= self.world_bounds[1]):
+            raise ValueError('World bounds must be finite with positive width and height')
         self.unit = unit
 
         if H_matrix is not None:
@@ -40,7 +43,11 @@ class HomographyTransformer:
         H = np.asarray(H, dtype=np.float64)
         if H.shape != (3, 3):
             raise ValueError(f"Homography matrix must be 3x3, got shape {H.shape}")
-        
+
+        # Fix #10: Reject non-finite matrices before any other check
+        if not np.all(np.isfinite(H)):
+            raise ValueError("Homography matrix contains non-finite values (NaN or Inf).")
+
         det = np.linalg.det(H)
         if np.isclose(det, 0.0, atol=1e-9):
             raise ValueError("Singular homography matrix cannot be inverted.")
@@ -63,10 +70,12 @@ class HomographyTransformer:
         Computes 3x3 homography using Hartley-normalized Direct Linear Transformation (DLT)
         or RANSAC if >= 4 correspondences are provided.
         """
+        if len(image_points) != len(world_points):
+            raise ValueError('Calibration point lists must have equal lengths')
+        if not np.all(np.isfinite(image_points)) or not np.all(np.isfinite(world_points)):
+            raise ValueError('Calibration coordinates must be finite')
         if len(image_points) < 4 or len(world_points) < 4:
             raise ValueError(f"At least 4 point correspondences required, got {len(image_points)}")
-        if len(image_points) != len(world_points):
-            raise ValueError(f"Number of image points ({len(image_points)}) must match world points ({len(world_points)}).")
 
         src_pts = np.asarray(image_points, dtype=np.float32).reshape(-1, 1, 2)
         dst_pts = np.asarray(world_points, dtype=np.float32).reshape(-1, 1, 2)
@@ -155,6 +164,10 @@ class HomographyTransformer:
         world_points: List[Tuple[float, float]]
     ) -> float:
         """Calculates root mean squared reprojection error in world units (meters)."""
+        if len(image_points) != len(world_points):
+            raise ValueError('Calibration point lists must have equal lengths')
+        if len(image_points) == 0:
+            return float("inf")
         errors = []
         for (u, v), (X_gt, Y_gt) in zip(image_points, world_points):
             try:
@@ -164,7 +177,10 @@ class HomographyTransformer:
                     errors.append(dist)
             except Exception:
                 continue
-        return float(np.sqrt(np.mean(np.square(errors)))) if errors else 0.0
+        # Fix #10: return infinity when no valid projections succeed rather than silently returning 0.0
+        if not errors:
+            return float("inf")
+        return float(np.sqrt(np.mean(np.array(errors) ** 2)))
 
     def compute_velocity(
         self,
@@ -274,7 +290,7 @@ class HomographyTransformer:
 
         return segments
 
-    def save_calibration(self, filepath: Union[Path, str]):
+    def save_calibration(self, filepath: Union[Path, str], source=None, image_size=None):
         """Saves calibration matrix and parameters to a JSON file."""
         if not self.is_calibrated:
             raise RuntimeError("Cannot save uncalibrated transformer.")
@@ -284,6 +300,10 @@ class HomographyTransformer:
             "world_bounds": list(self.world_bounds),
             "unit": self.unit
         }
+        if source is not None:
+            data['source'] = str(source)
+        if image_size is not None:
+            data['image_size'] = list(image_size)
         with open(filepath, "w") as f:
             json.dump(data, f, indent=2)
         logger.info(f"Calibration saved to {filepath}")
@@ -297,3 +317,33 @@ class HomographyTransformer:
         bounds = tuple(data.get("world_bounds", [0.0, 0.0, 20.0, 20.0]))
         unit = data.get("unit", "meters")
         return cls(H_matrix=H, world_bounds=bounds, unit=unit)
+
+    @classmethod
+    def for_source(cls, source, image_size, calibration_file=None):
+        """Auto-load only camera-bound calibration; an explicit legacy file is operator-selected."""
+        candidates = [Path(calibration_file)] if calibration_file else [
+            Path(str(source) + '.calibration.json'), Path('data/calibration.json')]
+        for path in candidates:
+            if not path.exists():
+                if calibration_file:
+                    raise FileNotFoundError(path)
+                continue
+            with path.open() as f:
+                data = json.load(f)
+            bound_source, bound_size = data.get('source'), data.get('image_size')
+            if (bound_source is None) != (bound_size is None):
+                raise ValueError('Calibration source and image size must be supplied together')
+            if bound_source is None:
+                if not calibration_file:
+                    continue
+            else:
+                if str(bound_source) != str(source):
+                    if calibration_file:
+                        raise ValueError('Calibration source does not match the selected feed')
+                    continue
+                if tuple(bound_size) != tuple(image_size):
+                    if calibration_file:
+                        raise ValueError('Calibration image size does not match the selected feed')
+                    continue
+            return cls.load_calibration(path)
+        return cls()

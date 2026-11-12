@@ -60,12 +60,19 @@ class KalmanFilter2D:
         self.x = np.array([[ix], [iy], [0.0], [0.0]], dtype=np.float64)
         self.P = np.diag([1.0, 1.0, 10.0, 10.0]).astype(np.float64)
 
-    def predict(self) -> Tuple[float, float]:
+    def predict(self, dt=None) -> Tuple[float, float]:
         """
         Projects state and covariance forward by dt:
         x' = F * x
         P' = F * P * F^T + Q
         """
+        if dt is not None:
+            if not np.isfinite(dt) or dt <= 0:
+                raise ValueError('Frame interval must be finite and positive')
+            self.dt = float(dt)
+            self.F[0, 2] = self.F[1, 3] = self.dt
+            acceleration = np.array([[dt*dt/2, 0], [0, dt*dt/2], [dt, 0], [0, dt]])
+            self.Q = acceleration @ acceleration.T * self.process_noise_std**2
         if not np.all(np.isfinite(self.x)) or not np.all(np.isfinite(self.P)):
             self.x = np.zeros((4, 1), dtype=np.float64)
             self.P = np.eye(4, dtype=np.float64) * 10.0

@@ -1,0 +1,20 @@
+{
+  "real_person_detections": 24,
+  "confirmed_track_observations": 23,
+  "events": [
+    {
+      "track_id": 1,
+      "event": "ENTER",
+      "zone_id": "test",
+      "reason": "Entered Test area"
+    },
+    {
+      "track_id": 1,
+      "event": "LOITER",
+      "zone_id": "test",
+      "reason": "Loitering in Test area"
+    }
+  ],
+  "pose_cli_decoded_output_frames": 24,
+  "limit": "Legacy calibration explicitly selected; broad test zone does not validate real-world accuracy"
+}

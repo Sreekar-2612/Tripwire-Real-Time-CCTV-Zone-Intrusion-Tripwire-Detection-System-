@@ -332,10 +332,9 @@ def draw_pose_skeleton(
     for i in range(17):
         if has_conf and kpts[i, 2] < conf_thresh:
             continue
-        pt = kpts[i, :2]
-        if not (np.isfinite(pt[0]) and np.isfinite(pt[1])):
+        if not (np.isfinite(kpts[i, 0]) and np.isfinite(kpts[i, 1])):
             continue
-        pt_int = (int(pt[0]), int(pt[1]))
-        cv2.circle(frame, pt_int, 3, joint_color, -1, cv2.LINE_AA)
+        pt = (int(kpts[i, 0]), int(kpts[i, 1]))
+        cv2.circle(frame, pt, 3, joint_color, -1, cv2.LINE_AA)
 
     return frame

@@ -32,12 +32,11 @@ class HomographyCalibratorCLI:
                 print(f"Point {len(self.clicked_points)} selected at pixel: ({x}, {y})")
 
     def run(self, length_m: float = 6.0, width_m: float = 3.0):
+        if not np.isfinite(length_m) or not np.isfinite(width_m) or min(length_m, width_m) <= 0:
+            raise ValueError('Calibration dimensions must be finite and positive')
         # Read source
         if self.source_path.isdigit():
-            cap_id = int(self.source_path)
-            cap = cv2.VideoCapture(cap_id, cv2.CAP_DSHOW)
-            if not cap.isOpened():
-                cap = cv2.VideoCapture(cap_id)
+            cap = cv2.VideoCapture(int(self.source_path))
             ret, self.frame = cap.read()
             cap.release()
         elif Path(self.source_path).suffix.lower() in [".jpg", ".png", ".jpeg"]:
@@ -110,7 +109,8 @@ class HomographyCalibratorCLI:
                 print("Homography Matrix H:\n", transformer.H)
 
                 Path(self.output_path).parent.mkdir(parents=True, exist_ok=True)
-                transformer.save_calibration(self.output_path)
+                transformer.save_calibration(self.output_path, source=self.source_path,
+                                             image_size=(self.frame.shape[1], self.frame.shape[0]))
                 print(f"✅ Calibration matrix saved to: {self.output_path}\n")
                 break
 
