@@ -1390,7 +1390,7 @@ def main():
 
     if video_path == "browser_camera":
         run_browser_camera_pipeline(
-            feed_option, zone_preset, use_pose, use_demo_calib, infer_imgsz, conf_thresh,
+            feed_option, zone_preset, use_pose, use_demo_calib, imgsz, conf_threshold,
             speed_alarm, dwell_confirm_sec, metric_status, metric_fps, metric_tracks,
             metric_threat, metric_breaches, alert_banner_placeholder, dual_view_placeholder,
             viewport_header_placeholder, key="browser_cam_client"
@@ -1406,7 +1406,7 @@ def main():
                         "Switched automatically to live Client Browser Camera below — allow camera access in your browser to begin live surveillance!"
                     )
                     run_browser_camera_pipeline(
-                        feed_option, zone_preset, use_pose, use_demo_calib, infer_imgsz, conf_thresh,
+                        feed_option, zone_preset, use_pose, use_demo_calib, imgsz, conf_threshold,
                         speed_alarm, dwell_confirm_sec, metric_status, metric_fps, metric_tracks,
                         metric_threat, metric_breaches, alert_banner_placeholder, dual_view_placeholder,
                         viewport_header_placeholder, key="fallback_browser_cam"
