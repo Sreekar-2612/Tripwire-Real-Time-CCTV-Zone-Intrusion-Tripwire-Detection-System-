@@ -71,6 +71,8 @@ class WebStreamEngine:
         self.active_feed = "template_tripwire"
         self.conf = 0.35
         self.use_pose = False
+        self.active_breach_count = 0
+        self.active_breach = False
 
         # Load models
         pose_model_path = Path("yolov8n-pose.pt")
@@ -105,6 +107,8 @@ class WebStreamEngine:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (160, 160, 160), 1, cv2.LINE_AA)
         radar_img = self.radar.render(self.zones if self.transformer.is_calibrated else [], [])
         dual_view = BEVRadarRenderer.create_dual_view(frame, radar_img)
+        self.active_breach_count = 0
+        self.active_breach = False
         ret_enc, buffer = cv2.imencode(".jpg", dual_view)
         return buffer.tobytes() if ret_enc else b""
 
@@ -135,6 +139,8 @@ class WebStreamEngine:
         self.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=.3)
         self.zones = get_default_zones(self.active_feed)
         self.monitor = ZoneMonitor()
+        self.active_breach_count = 0
+        self.active_breach = False
         self.latest_jpeg = None
         self.last_frame_time = float('-inf')
 
@@ -274,9 +280,12 @@ class WebStreamEngine:
                             pass
 
             radar_tracks = []
+            breach_count = 0
             for trk in tracks:
                 w_pos = trk.get("world_pos")
                 is_breach = alarm_states[trk['track_id']]['is_breaching']
+                if is_breach:
+                    breach_count += 1
                 posture = trk.get('posture', 'unknown')
                 speed_kmh = float(trk.get("speed", 0.0))
                 radar_tracks.append({
@@ -306,6 +315,10 @@ class WebStreamEngine:
                                           title='GROUND RADAR' if self.transformer.is_calibrated else 'UNCALIBRATED - METRIC ALARMS DISABLED')
             dual_view = BEVRadarRenderer.create_dual_view(display_frame, radar_img)
 
+            # Update active breach telemetry for web audio & siren state
+            self.active_breach_count = breach_count
+            self.active_breach = breach_count > 0
+
             # Resize for responsive web streaming
             dual_view_resized = cv2.resize(dual_view, (1200, 500))
             _, jpeg = cv2.imencode(".jpg", dual_view_resized, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -330,6 +343,29 @@ HTML_PAGE = """
     select, button { background: #1e293b; color: #f1f5f9; border: 1px solid #334155; padding: 8px 14px; border-radius: 8px; font-size: 14px; cursor: pointer; transition: all 0.2s ease; }
     select:hover, button:hover { background: #334155; }
     .btn-pose-active { background: #0284c7; border-color: #38bdf8; font-weight: 600; }
+    .btn-audio-active { background: #059669; border-color: #10b981; font-weight: 600; }
+    .btn-audio-muted { background: #475569; border-color: #64748b; color: #cbd5e1; }
+    @keyframes pulse-banner {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+      70% { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    .alert-banner {
+      width: 100%;
+      max-width: 1200px;
+      background: #7f1d1d;
+      color: #fecaca;
+      border: 2px solid #ef4444;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+      box-sizing: border-box;
+      text-align: center;
+      animation: pulse-banner 1.2s infinite;
+    }
     .stream-container { width: 100%; max-width: 1200px; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.7); border: 1px solid #1e293b; background: #000; }
     img { width: 100%; display: block; }
     .cards { width: 100%; max-width: 1200px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 20px; }
@@ -355,7 +391,12 @@ HTML_PAGE = """
         <option value="webcam">Live USB / Laptop Webcam</option>
       </select>
       <button id="poseBtn" class="btn-pose-active" onclick="togglePose()">⚡ Pose Kinetics: ON</button>
+      <button id="audioAlarmBtn" class="btn-audio-active" onclick="toggleAudioAlarm()">🔊 Alarm Siren: ON</button>
     </div>
+  </div>
+
+  <div id="alertBanner" class="alert-banner" style="display: none;">
+    🚨 CRITICAL PERIMETER BREACH ACTIVE — INTRUDER DETECTED IN RESTRICTED ZONE
   </div>
 
   <div class="stream-container">
@@ -382,6 +423,95 @@ HTML_PAGE = """
   </div>
 
   <script>
+    let audioAlarmEnabled = true;
+    let audioCtx = null;
+    let lastAlarmSoundTime = 0;
+
+    function initAudioContext() {
+      if (!audioCtx) {
+        try {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+          }
+        } catch (e) {
+          console.warn('Web Audio initialization error:', e);
+        }
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    // Auto-unlock audio on user gesture
+    document.addEventListener('click', initAudioContext, { once: true });
+    document.addEventListener('keydown', initAudioContext, { once: true });
+
+    function toggleAudioAlarm() {
+      initAudioContext();
+      audioAlarmEnabled = !audioAlarmEnabled;
+      const btn = document.getElementById('audioAlarmBtn');
+      if (audioAlarmEnabled) {
+        btn.innerText = '🔊 Alarm Siren: ON';
+        btn.className = 'btn-audio-active';
+      } else {
+        btn.innerText = '🔇 Alarm Siren: MUTED';
+        btn.className = 'btn-audio-muted';
+      }
+    }
+
+    function playTacticalSiren() {
+      if (!audioAlarmEnabled) return;
+      initAudioContext();
+      if (!audioCtx) return;
+
+      const nowMs = Date.now();
+      if (nowMs - lastAlarmSoundTime < 850) return;
+      lastAlarmSoundTime = nowMs;
+
+      try {
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        // Crisp alternating two-tone tactical security alarm (880Hz / 659Hz)
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(880, t);
+        osc.frequency.setValueAtTime(659, t + 0.18);
+        osc.frequency.setValueAtTime(880, t + 0.36);
+        osc.frequency.setValueAtTime(659, t + 0.54);
+
+        gain.gain.setValueAtTime(0.001, t);
+        gain.gain.exponentialRampToValueAtTime(0.20, t + 0.02);
+        gain.gain.setValueAtTime(0.20, t + 0.65);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.72);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(t);
+        osc.stop(t + 0.73);
+      } catch (err) {
+        console.warn('Web Audio alarm synthesis error:', err);
+      }
+    }
+
+    async function pollAlarmStatus() {
+      try {
+        const resp = await fetch('/api/alarm_status');
+        if (resp.ok) {
+          const data = await resp.json();
+          const banner = document.getElementById('alertBanner');
+          if (data && data.active_breach) {
+            banner.style.display = 'block';
+            playTacticalSiren();
+          } else {
+            banner.style.display = 'none';
+          }
+        }
+      } catch (e) {}
+    }
+    setInterval(pollAlarmStatus, 300);
+
     function changeFeed(val) {
       fetch('/api/switch_feed?feed=' + val, { method: 'POST' });
     }
@@ -404,6 +534,13 @@ HTML_PAGE = """
 @app.get("/")
 def get_dashboard():
     return HTMLResponse(HTML_PAGE)
+
+@app.get("/api/alarm_status")
+def get_alarm_status():
+    return {
+        "active_breach": engine.active_breach,
+        "breach_count": engine.active_breach_count
+    }
 
 @app.post("/api/switch_feed")
 def switch_feed(feed: str):

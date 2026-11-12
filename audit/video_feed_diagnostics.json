@@ -1,0 +1,378 @@
+{
+  "corridor_tripwire_breach.mp4": {
+    "input_resolution": "768x432",
+    "source_fps": 12.0,
+    "input_frames": 120,
+    "processed_frames": 120,
+    "elapsed_sec": 19.51,
+    "processing_fps": 6.15,
+    "calibrated": true,
+    "unique_tracks": 1,
+    "track_ids": [
+      1
+    ],
+    "max_speed_kmh": 16.23,
+    "postures_seen": [
+      "standing",
+      "unknown",
+      "walking"
+    ],
+    "event_summary": {
+      "ENTER": 2,
+      "SPEED_START": 5,
+      "SPEED_END": 5,
+      "LOITER": 1,
+      "CROSS_IN": 1,
+      "EXIT": 2
+    },
+    "events_sample": [
+      {
+        "track_id": 1,
+        "event": "ENTER",
+        "zone_id": "z_alcove",
+        "reason": "Entered RESTRICTED OFFICE VAULT"
+      },
+      {
+        "track_id": 1,
+        "event": "SPEED_START",
+        "zone_id": "speed",
+        "reason": "Speed threshold exceeded"
+      },
+      {
+        "track_id": 1,
+        "event": "SPEED_END",
+        "zone_id": "speed",
+        "reason": "speed ended"
+      },
+      {
+        "track_id": 1,
+        "event": "LOITER",
+        "zone_id": "z_alcove",
+        "reason": "Loitering in RESTRICTED OFFICE VAULT"
+      },
+      {
+        "track_id": 1,
+        "event": "CROSS_IN",
+        "zone_id": "tw_chk",
+        "reason": "Crossed CHECKPOINT TRIPWIRE"
+      },
+      {
+        "track_id": 1,
+        "event": "SPEED_START",
+        "zone_id": "speed",
+        "reason": "Speed threshold exceeded"
+      },
+      {
+        "track_id": 1,
+        "event": "EXIT",
+        "zone_id": "z_alcove",
+        "reason": "Left RESTRICTED OFFICE VAULT or tracking lost"
+      },
+      {
+        "track_id": 1,
+        "event": "ENTER",
+        "zone_id": "z_alcove",
+        "reason": "Entered RESTRICTED OFFICE VAULT"
+      },
+      {
+        "track_id": 1,
+        "event": "SPEED_END",
+        "zone_id": "speed",
+        "reason": "speed ended"
+      },
+      {
+        "track_id": 1,
+        "event": "SPEED_START",
+        "zone_id": "speed",
+        "reason": "Speed threshold exceeded"
+      }
+    ]
+  },
+  "high_speed_fleeing_breach.mp4": {
+    "input_resolution": "768x432",
+    "source_fps": 18.0,
+    "input_frames": 60,
+    "processed_frames": 60,
+    "elapsed_sec": 6.84,
+    "processing_fps": 8.77,
+    "calibrated": true,
+    "unique_tracks": 1,
+    "track_ids": [
+      2
+    ],
+    "max_speed_kmh": 35.0,
+    "postures_seen": [
+      "running",
+      "standing",
+      "unknown",
+      "walking"
+    ],
+    "event_summary": {
+      "ENTER": 1,
+      "SPEED_START": 3,
+      "SPEED_END": 3,
+      "CROSS_IN": 1,
+      "EXIT": 1
+    },
+    "events_sample": [
+      {
+        "track_id": 2,
+        "event": "ENTER",
+        "zone_id": "z_flee",
+        "reason": "Entered RESTRICTED VAULT"
+      },
+      {
+        "track_id": 2,
+        "event": "SPEED_START",
+        "zone_id": "speed",
+        "reason": "Speed threshold exceeded"
+      },
+      {
+        "track_id": 2,
+        "event": "SPEED_END",
+        "zone_id": "speed",
+        "reason": "speed ended"
+      },
+      {
+        "track_id": 2,
+        "event": "SPEED_START",
+        "zone_id": "speed",
+        "reason": "Speed threshold exceeded"
+      },
+      {
+        "track_id": 2,
+        "event": "CROSS_IN",
+        "zone_id": "tw_flee",
+        "reason": "Crossed PERIMETER TRIPWIRE"
+      },
+      {
+        "track_id": 2,
+        "event": "EXIT",
+        "zone_id": "z_flee",
+        "reason": "Left RESTRICTED VAULT or tracking lost"
+      },
+      {
+        "track_id": 2,
+        "event": "SPEED_END",
+        "zone_id": "speed",
+        "reason": "speed ended"
+      },
+      {
+        "track_id": 2,
+        "event": "SPEED_START",
+        "zone_id": "speed",
+        "reason": "Speed threshold exceeded"
+      },
+      {
+        "track_id": 2,
+        "event": "SPEED_END",
+        "zone_id": "speed",
+        "reason": "speed ended"
+      }
+    ]
+  },
+  "walking_cctv.mp4": {
+    "input_resolution": "768x432",
+    "source_fps": 12.0,
+    "input_frames": 732,
+    "processed_frames": 732,
+    "elapsed_sec": 76.09,
+    "processing_fps": 9.62,
+    "calibrated": true,
+    "unique_tracks": 7,
+    "track_ids": [
+      3,
+      4,
+      5,
+      7,
+      8,
+      9,
+      10
+    ],
+    "max_speed_kmh": 22.73,
+    "postures_seen": [
+      "standing",
+      "unknown",
+      "walking"
+    ],
+    "event_summary": {
+      "ENTER": 10,
+      "LOITER": 2,
+      "CROSS_IN": 7,
+      "SPEED_START": 28,
+      "EXIT": 10,
+      "SPEED_END": 28,
+      "CROSS_OUT": 1
+    },
+    "events_sample": [
+      {
+        "track_id": 3,
+        "event": "ENTER",
+        "zone_id": "z_alcove",
+        "reason": "Entered RESTRICTED OFFICE VAULT"
+      },
+      {
+        "track_id": 3,
+        "event": "LOITER",
+        "zone_id": "z_alcove",
+        "reason": "Loitering in RESTRICTED OFFICE VAULT"
+      },
+      {
+        "track_id": 3,
+        "event": "CROSS_IN",
+        "zone_id": "tw_chk",
+        "reason": "Crossed CHECKPOINT TRIPWIRE"
+      },
+      {
+        "track_id": 3,
+        "event": "SPEED_START",
+        "zone_id": "speed",
+        "reason": "Speed threshold exceeded"
+      },
+      {
+        "track_id": 3,
+        "event": "EXIT",
+        "zone_id": "z_alcove",
+        "reason": "Left RESTRICTED OFFICE VAULT or tracking lost"
+      },
+      {
+        "track_id": 3,
+        "event": "ENTER",
+        "zone_id": "z_alcove",
+        "reason": "Entered RESTRICTED OFFICE VAULT"
+      },
+      {
+        "track_id": 3,
+        "event": "SPEED_END",
+        "zone_id": "speed",
+        "reason": "speed ended"
+      },
+      {
+        "track_id": 3,
+        "event": "EXIT",
+        "zone_id": "z_alcove",
+        "reason": "Left RESTRICTED OFFICE VAULT or tracking lost"
+      },
+      {
+        "track_id": 3,
+        "event": "SPEED_START",
+        "zone_id": "speed",
+        "reason": "Speed threshold exceeded"
+      },
+      {
+        "track_id": 3,
+        "event": "SPEED_END",
+        "zone_id": "speed",
+        "reason": "speed ended"
+      }
+    ]
+  },
+  "cctv_sample.mp4": {
+    "input_resolution": "640x480",
+    "source_fps": 25.0,
+    "input_frames": 250,
+    "processed_frames": 250,
+    "elapsed_sec": 30.78,
+    "processing_fps": 8.12,
+    "calibrated": true,
+    "unique_tracks": 1,
+    "track_ids": [
+      11
+    ],
+    "max_speed_kmh": 2.6,
+    "postures_seen": [
+      "standing"
+    ],
+    "event_summary": {},
+    "events_sample": []
+  },
+  "solutions_ci_demo.mp4": {
+    "input_resolution": "640x360",
+    "source_fps": 30.0,
+    "input_frames": 62,
+    "processed_frames": 62,
+    "elapsed_sec": 7.9,
+    "processing_fps": 7.85,
+    "calibrated": true,
+    "unique_tracks": 3,
+    "track_ids": [
+      12,
+      13,
+      14
+    ],
+    "max_speed_kmh": 15.86,
+    "postures_seen": [
+      "running",
+      "standing",
+      "walking"
+    ],
+    "event_summary": {
+      "SPEED_START": 9,
+      "ENTER": 4,
+      "SPEED_END": 9,
+      "EXIT": 4
+    },
+    "events_sample": [
+      {
+        "track_id": 12,
+        "event": "SPEED_START",
+        "zone_id": "speed",
+        "reason": "Speed threshold exceeded"
+      },
+      {
+        "track_id": 13,
+        "event": "ENTER",
+        "zone_id": "z_ped",
+        "reason": "Entered RESTRICTED PLAZA BUFFER"
+      },
+      {
+        "track_id": 12,
+        "event": "SPEED_END",
+        "zone_id": "speed",
+        "reason": "speed ended"
+      },
+      {
+        "track_id": 13,
+        "event": "SPEED_START",
+        "zone_id": "speed",
+        "reason": "Speed threshold exceeded"
+      },
+      {
+        "track_id": 13,
+        "event": "EXIT",
+        "zone_id": "z_ped",
+        "reason": "Left RESTRICTED PLAZA BUFFER or tracking lost"
+      },
+      {
+        "track_id": 13,
+        "event": "SPEED_END",
+        "zone_id": "speed",
+        "reason": "speed ended"
+      },
+      {
+        "track_id": 13,
+        "event": "ENTER",
+        "zone_id": "z_ped",
+        "reason": "Entered RESTRICTED PLAZA BUFFER"
+      },
+      {
+        "track_id": 13,
+        "event": "EXIT",
+        "zone_id": "z_ped",
+        "reason": "Left RESTRICTED PLAZA BUFFER or tracking lost"
+      },
+      {
+        "track_id": 13,
+        "event": "ENTER",
+        "zone_id": "z_ped",
+        "reason": "Entered RESTRICTED PLAZA BUFFER"
+      },
+      {
+        "track_id": 12,
+        "event": "SPEED_START",
+        "zone_id": "speed",
+        "reason": "Speed threshold exceeded"
+      }
+    ]
+  }
+}

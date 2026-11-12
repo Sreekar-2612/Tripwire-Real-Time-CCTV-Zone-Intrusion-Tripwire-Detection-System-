@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tripwire — Live Computer Vision & BEV Radar Demo</title>
+  <style>
+    body { margin: 0; background-color: #0b0f17; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+    .header { width: 100%; max-width: 1200px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 12px; margin-bottom: 20px; }
+    .title { font-size: 22px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
+    .badge { background: #0284c7; color: #fff; font-size: 11px; padding: 3px 8px; border-radius: 999px; text-transform: uppercase; }
+    .controls { display: flex; gap: 12px; align-items: center; }
+    select, button { background: #1e293b; color: #f1f5f9; border: 1px solid #334155; padding: 8px 14px; border-radius: 8px; font-size: 14px; cursor: pointer; transition: all 0.2s ease; }
+    select:hover, button:hover { background: #334155; }
+    .btn-pose-active { background: #0284c7; border-color: #38bdf8; font-weight: 600; }
+    .btn-audio-active { background: #059669; border-color: #10b981; font-weight: 600; }
+    .btn-audio-muted { background: #475569; border-color: #64748b; color: #cbd5e1; }
+    @keyframes pulse-banner {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+      70% { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    .alert-banner {
+      width: 100%;
+      max-width: 1200px;
+      background: #7f1d1d;
+      color: #fecaca;
+      border: 2px solid #ef4444;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+      box-sizing: border-box;
+      text-align: center;
+      animation: pulse-banner 1.2s infinite;
+    }
+    .stream-container { width: 100%; max-width: 1200px; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.7); border: 1px solid #1e293b; background: #000; }
+    img { width: 100%; display: block; }
+    .cards { width: 100%; max-width: 1200px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 20px; }
+    .card { background: #111827; border: 1px solid #1f2937; padding: 16px; border-radius: 10px; }
+    .card-label { font-size: 12px; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; }
+    .card-val { font-size: 20px; font-weight: 700; color: #38bdf8; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">
+      <span>🛡️ TRIPWIRE CV SURVEILLANCE</span>
+      <span class="badge">Live BEV Radar Demo</span>
+    </div>
+    <div class="controls">
+      <label for="feed">Feed:</label>
+      <select id="feed" onchange="changeFeed(this.value)">
+        <option value="template_tripwire">Template: Corridor Tripwire Crossing Breach</option>
+        <option value="template_speed">Template: High-Speed Fleeing Breach</option>
+        <option value="walking">Walking Corridor CCTV (Full 60s)</option>
+        <option value="hallway">Hallway Intrusion</option>
+        <option value="crossing">Pedestrian Crossing</option>
+        <option value="webcam">Live USB / Laptop Webcam</option>
+      </select>
+      <button id="poseBtn" class="btn-pose-active" onclick="togglePose()">⚡ Pose Kinetics: ON</button>
+      <button id="audioAlarmBtn" class="btn-audio-active" onclick="toggleAudioAlarm()">🔊 Alarm Siren: ON</button>
+    </div>
+  </div>
+
+  <div id="alertBanner" class="alert-banner" style="display: none;">
+    🚨 CRITICAL PERIMETER BREACH ACTIVE — INTRUDER DETECTED IN RESTRICTED ZONE
+  </div>
+
+  <div class="stream-container">
+    <img src="/stream" alt="Tripwire Live Stream">
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-label">Perspective Geometry</div>
+      <div class="card-val">DLT Homography</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Tracking Engine</div>
+      <div class="card-val">ByteTrack + EMA</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Action Classification</div>
+      <div class="card-val" id="poseCard">Pose available when weights are installed</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Ground Grid Extent</div>
+      <div class="card-val">20m x 20m Radar</div>
+    </div>
+  </div>
+
+  <script>
+    let audioAlarmEnabled = true;
+    let audioCtx = null;
+    let lastAlarmSoundTime = 0;
+
+    function initAudioContext() {
+      if (!audioCtx) {
+        try {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+          }
+        } catch (e) {
+          console.warn('Web Audio initialization error:', e);
+        }
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    // Auto-unlock audio on user gesture
+    document.addEventListener('click', initAudioContext, { once: true });
+    document.addEventListener('keydown', initAudioContext, { once: true });
+
+    function toggleAudioAlarm() {
+      initAudioContext();
+      audioAlarmEnabled = !audioAlarmEnabled;
+      const btn = document.getElementById('audioAlarmBtn');
+      if (audioAlarmEnabled) {
+        btn.innerText = '🔊 Alarm Siren: ON';
+        btn.className = 'btn-audio-active';
+      } else {
+        btn.innerText = '🔇 Alarm Siren: MUTED';
+        btn.className = 'btn-audio-muted';
+      }
+    }
+
+    function playTacticalSiren() {
+      if (!audioAlarmEnabled) return;
+      initAudioContext();
+      if (!audioCtx) return;
+
+      const nowMs = Date.now();
+      if (nowMs - lastAlarmSoundTime < 850) return;
+      lastAlarmSoundTime = nowMs;
+
+      try {
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        // Crisp alternating two-tone tactical security alarm (880Hz / 659Hz)
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(880, t);
+        osc.frequency.setValueAtTime(659, t + 0.18);
+        osc.frequency.setValueAtTime(880, t + 0.36);
+        osc.frequency.setValueAtTime(659, t + 0.54);
+
+        gain.gain.setValueAtTime(0.001, t);
+        gain.gain.exponentialRampToValueAtTime(0.20, t + 0.02);
+        gain.gain.setValueAtTime(0.20, t + 0.65);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.72);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(t);
+        osc.stop(t + 0.73);
+      } catch (err) {
+        console.warn('Web Audio alarm synthesis error:', err);
+      }
+    }
+
+    async function pollAlarmStatus() {
+      try {
+        const resp = await fetch('/api/alarm_status');
+        if (resp.ok) {
+          const data = await resp.json();
+          const banner = document.getElementById('alertBanner');
+          if (data && data.active_breach) {
+            banner.style.display = 'block';
+            playTacticalSiren();
+          } else {
+            banner.style.display = 'none';
+          }
+        }
+      } catch (e) {}
+    }
+    setInterval(pollAlarmStatus, 300);
+
+    function changeFeed(val) {
+      fetch('/api/switch_feed?feed=' + val, { method: 'POST' });
+    }
+    function showPose(d) {
+      const btn = document.getElementById('poseBtn');
+      btn.innerText = d.available === false ? 'Pose unavailable' : 'Pose Kinetics: ' + (d.use_pose ? 'ON' : 'OFF');
+      btn.disabled = d.available === false;
+      btn.className = d.use_pose ? 'btn-pose-active' : '';
+      document.getElementById('poseCard').innerText = d.use_pose ? '17-Joint Pose AI' : 'YOLOv8-Nano';
+    }
+    function togglePose() {
+      fetch('/api/toggle_pose', { method: 'POST' }).then(r => r.json()).then(showPose);
+    }
+    fetch('/api/toggle_pose').then(r => r.json()).then(showPose);
+  </script>
+</body>
+</html>

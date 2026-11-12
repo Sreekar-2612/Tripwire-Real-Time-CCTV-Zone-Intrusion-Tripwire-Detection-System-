@@ -1,6 +1,12 @@
 import sys
 import time
+import threading
 from pathlib import Path
+
+try:
+    import winsound
+except ImportError:
+    winsound = None
 
 # Ensure project root is in sys.path for direct script execution
 project_root = Path(__file__).resolve().parent.parent
@@ -18,6 +24,7 @@ from cv_core.visualizer.bev_radar import BEVRadarRenderer
 from cv_core.kinetics.pose_classifier import PoseKineticClassifier, draw_pose_skeleton
 from cv_core.video import FrameClock
 from cv_core.monitoring import ZoneMonitor
+from cv_core.audio.siren import SirenAlertController
 
 class TripwireInteractiveDemo:
     """
@@ -40,6 +47,9 @@ class TripwireInteractiveDemo:
         self.show_pose = Path("yolov8n-pose.pt").exists()
         self.conf_threshold = 0.35
         self.speed_alarm_kmh = 4.0
+        self.audio_alarm_enabled = True
+        self.last_alarm_sound_time = 0.0
+        self.siren_controller = SirenAlertController(enabled=self.audio_alarm_enabled)
 
         # Load models
         print("Initializing YOLOv8 & CV Components...")
@@ -72,6 +82,39 @@ class TripwireInteractiveDemo:
         self.monitor = ZoneMonitor()
         self.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
         print(f"Loaded feed [{key}]: {src}")
+
+    def _trigger_audio_alarm(self):
+        """
+        Dispatches non-blocking audible siren beeps in a daemon thread upon threat detection.
+        Throttled to prevent overlapping audio loops or CV thread blocking.
+        """
+        if hasattr(self, "siren_controller") and self.siren_controller is not None:
+            self.siren_controller.set_enabled(getattr(self, "audio_alarm_enabled", True))
+            self.siren_controller.sync_with_events(breach_count=1)
+            self.siren_controller.trigger_non_blocking_beep()
+            return
+
+        if not getattr(self, "audio_alarm_enabled", True):
+            return
+        now = time.time()
+        if now - getattr(self, "last_alarm_sound_time", 0.0) < 0.65:
+            return
+        self.last_alarm_sound_time = now
+
+        def _beep_worker():
+            if winsound is not None:
+                try:
+                    winsound.Beep(900, 150)
+                    winsound.Beep(650, 150)
+                except Exception:
+                    pass
+            else:
+                try:
+                    print('\a', end='', flush=True)
+                except Exception:
+                    pass
+
+        threading.Thread(target=_beep_worker, daemon=True).start()
 
     def run(self):
         window_name = "TRIPWIRE CV DEMO — PERSPECTIVE (LEFT) + BEV RADAR (RIGHT)"
@@ -255,10 +298,12 @@ class TripwireInteractiveDemo:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.55, (230, 240, 255), 1, cv2.LINE_AA)
 
                 if alarm_triggered:
+                    self._trigger_audio_alarm()
                     cv2.putText(dual_view, "⚠️ PERIMETER BREACH ACTIVE", (dw // 2 - 120, 26),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
 
-                controls_str = "[1-5/0] Switch Video | [SPACE] Pause | [G] Grid | [S] Snapshot | [Q] Quit"
+                audio_status = "ON" if getattr(self, "audio_alarm_enabled", True) else "MUTED"
+                controls_str = f"[1-5/0] Switch Video | [SPACE] Pause | [G] Grid | [M] Audio: {audio_status} | [S] Snapshot | [Q] Quit"
                 (cw, _), _ = cv2.getTextSize(controls_str, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
                 cv2.putText(dual_view, controls_str, (dw - cw - 16, 26),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.42, (160, 180, 200), 1, cv2.LINE_AA)
@@ -273,6 +318,11 @@ class TripwireInteractiveDemo:
                     self.paused = not self.paused
                 elif key == ord('g'):
                     self.show_grid = not self.show_grid
+                elif key == ord('m'):
+                    self.audio_alarm_enabled = not getattr(self, "audio_alarm_enabled", True)
+                    if hasattr(self, "siren_controller") and self.siren_controller is not None:
+                        self.siren_controller.set_enabled(self.audio_alarm_enabled)
+                    print(f"🔊 Audio Siren Alarm: {'ENABLED' if self.audio_alarm_enabled else 'MUTED'}")
                 elif chr(key) in self.videos:
                     self._load_source(chr(key))
                 elif key == ord('s'):

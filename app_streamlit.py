@@ -10,8 +10,10 @@ import torch
 # Try importing streamlit
 try:
     import streamlit as st
+    import streamlit.components.v1 as components
 except ImportError:
     st = None
+    components = None
 
 def get_width_kwargs(stretch: bool = True):
     """Provides version-compatible kwargs for BUTTONS only across Streamlit versions."""
@@ -37,6 +39,7 @@ from cv_core.kinetics.pose_classifier import PoseKineticClassifier, draw_pose_sk
 from cv_core.visualizer.bev_radar import BEVRadarRenderer
 from cv_core.video import FrameClock
 from cv_core.monitoring import ZoneMonitor
+from cv_core.audio.siren import SirenAlertController
 import hashlib
 import tempfile
 
@@ -77,6 +80,8 @@ def main():
         st.session_state.incident_log = []
     if "evidence_locker" not in st.session_state:
         st.session_state.evidence_locker = []
+    if "siren_controller" not in st.session_state:
+        st.session_state.siren_controller = SirenAlertController(enabled=True)
 
     # Custom Cyber SOC Dark Styling
     st.markdown("""
@@ -93,6 +98,14 @@ def main():
         .badge-dlt { background-color: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid #38bdf8; }
         .badge-kalman { background-color: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid #a855f7; }
         .stMetric { background-color: #111827; padding: 12px; border-radius: 8px; border: 1px solid #1f2937; }
+        @keyframes pulse-red-alert {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        div[data-testid="stAlert"] {
+            animation: pulse-red-alert 1.4s infinite;
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -196,6 +209,13 @@ def main():
         value=True,
         help="Applies default calibrated floor homography to estimate ground coordinates, metric velocity (km/h), and BEV radar blips when camera-specific calibration is not loaded."
     )
+    enable_audio_alarm = st.sidebar.checkbox(
+        "🔊 Audible Alarm Siren",
+        value=True,
+        help="Plays an audible security siren when an active perimeter breach or intrusion threat is detected."
+    )
+    if "siren_controller" in st.session_state:
+        st.session_state.siren_controller.set_enabled(enable_audio_alarm)
 
     st.sidebar.markdown("---")
     col_btn1, col_btn2 = st.sidebar.columns(2)
@@ -247,6 +267,8 @@ def main():
     st.markdown("---")
 
     # Main Display Area
+    alert_banner_placeholder = st.empty()
+    audio_siren_placeholder = st.empty()
     dual_view_placeholder = st.empty()
     status_text = st.empty()
 
@@ -340,6 +362,7 @@ def main():
 
         frame_count = 0
         t0 = time.time()
+        last_siren_time = 0.0
 
         try:
             # Continuous processing loop
@@ -575,6 +598,64 @@ def main():
                 metric_tracks.metric("Active Targets", f"{len(active_tracks)}", f"{len(active_tracks)} in camera frame")
                 metric_breaches.metric("Intrusion Breaches", f"{breach_count}", "🚨 ALARM ACTIVE" if breach_count > 0 else "Secure")
 
+                # Visual Threat Banner & Native Web Audio Siren Synthesizer
+                if breach_count > 0:
+                    alert_banner_placeholder.error("🚨 CRITICAL PERIMETER BREACH ACTIVE — INTRUDER DETECTED IN RESTRICTED ZONE")
+                    if "siren_controller" in st.session_state:
+                        st.session_state.siren_controller.sync_with_events(events=frame_events, states=alarm_states, breach_count=breach_count)
+                    if enable_audio_alarm and components is not None:
+                        if now_ts - last_siren_time >= 0.85:
+                            last_siren_time = now_ts
+                            alarm_token = int(now_ts * 1000)
+                            siren_html = f"""
+                            <div id="tripwire-siren-{alarm_token}" style="display:none;"></div>
+                            <script>
+                            (function() {{
+                                try {{
+                                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                                    if (!AudioContextClass) return;
+                                    const ctx = new AudioContextClass();
+                                    if (ctx.state === 'suspended') {{
+                                        ctx.resume();
+                                    }}
+                                    const t = ctx.currentTime;
+                                    const osc = ctx.createOscillator();
+                                    const gain = ctx.createGain();
+
+                                    // Crisp two-tone tactical security alarm siren pulse (880Hz / 659Hz)
+                                    osc.type = 'sawtooth';
+                                    osc.frequency.setValueAtTime(880, t);
+                                    osc.frequency.setValueAtTime(659, t + 0.18);
+                                    osc.frequency.setValueAtTime(880, t + 0.36);
+                                    osc.frequency.setValueAtTime(659, t + 0.54);
+
+                                    gain.gain.setValueAtTime(0.001, t);
+                                    gain.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+                                    gain.gain.setValueAtTime(0.25, t + 0.65);
+                                    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.72);
+
+                                    osc.connect(gain);
+                                    gain.connect(ctx.destination);
+
+                                    osc.start(t);
+                                    osc.stop(t + 0.73);
+                                    osc.onended = function() {{
+                                        try {{ ctx.close(); }} catch(e) {{}}
+                                    }};
+                                }} catch (err) {{
+                                    console.warn("Web Audio alarm synthesizer error:", err);
+                                }}
+                            }})();
+                            </script>
+                            """
+                            with audio_siren_placeholder:
+                                components.html(siren_html, height=0, width=0)
+                else:
+                    if "siren_controller" in st.session_state:
+                        st.session_state.siren_controller.sync_with_events(breach_count=0)
+                    alert_banner_placeholder.empty()
+                    audio_siren_placeholder.empty()
+
                 status_text.info(f"⚡ Pipeline FPS: **{fps:.1f}** | Inference: **{infer_ms:.1f}ms** | Tracking: **{track_ms:.1f}ms** | Active Targets: **{len(active_tracks)}** | Breaches: **{breach_count}** | Feed: **{feed_option}**")
 
                 # Render Incident Audit Log and Evidence Locker (Live updates)
@@ -596,10 +677,14 @@ def main():
                 time.sleep(0.015)
 
         finally:
+            alert_banner_placeholder.empty()
+            audio_siren_placeholder.empty()
             cap.release()
             st.session_state.cap = None
 
     elif not st.session_state.is_running:
+        alert_banner_placeholder.empty()
+        audio_siren_placeholder.empty()
         status_text.warning("⏸️ Surveillance pipeline is paused. Click **▶️ Start Live** in the sidebar to run.")
         if st.session_state.evidence_locker:
             with evidence_placeholder.container():

@@ -286,3 +286,4 @@ A person walking through a corridor is authorized (`🟢 NORMAL`). A person runn
 - **Designed a stateful spatial perimeter engine (`ZoneMonitor`)** supporting arbitrary polygon geofences and parametric vector tripwires with directional half-plane crossing hysteresis and debounced dwell timers.
 - **Implemented Joseph-form stabilized covariance updates** in the Kalman state filter and **Liang-Barsky parametric line clipping** to eliminate numerical drift and floor-grid projection overshoots.
 - **Developed multi-threaded deployment interfaces** using **Streamlit** (interactive SOC HUD with automated forensic snapshot capture) and **FastAPI** (MJPEG streaming with token authentication), backed by **94 automated unit and regression tests (100% pass rate)**.
+
