@@ -101,7 +101,7 @@ def open_capture_source(source, max_retries: int = 2):
                         pass
                     # Verify camera transmits actual frames with warmup reads
                     warmup_ok = False
-                    for _ in range(5):
+                    for _ in range(10):
                         try:
                             ret, f = cap.read()
                             if ret and f is not None and f.size > 0:
@@ -109,7 +109,7 @@ def open_capture_source(source, max_retries: int = 2):
                                 break
                         except Exception:
                             pass
-                        time.sleep(0.06)
+                        time.sleep(0.08)
                     if warmup_ok:
                         return cap, idx, b_name, None
                     try:
@@ -1261,6 +1261,7 @@ def main():
         if st.session_state.cap is None or not st.session_state.cap.isOpened():
             cap, actual_src, backend_name, err = open_capture_source(video_path)
             if cap is None or not cap.isOpened():
+                metric_status.metric("Stream Status", "Standby", "Awaiting Engage")
                 if err:
                     status_text.error(err)
                 else:
