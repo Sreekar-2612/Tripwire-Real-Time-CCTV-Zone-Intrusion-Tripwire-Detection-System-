@@ -1306,16 +1306,14 @@ def main():
                             raw_detections.append({'bbox': [x1, y1, x2, y2], 'conf': conf, 'keypoints': keypoints_data})
 
                 t_track_start = time.time()
-                active_tracks = tracker.update(raw_detections, transformer if transformer.is_calibrated else None, dt=0.033)
+                active_tracks = tracker.update(
+                    raw_detections,
+                    homography_transformer=transformer if transformer.is_calibrated else None,
+                    pose_classifier=pose_classifier,
+                    zones=zones,
+                    elapsed_dt=0.033
+                )
                 track_ms = (time.time() - t_track_start) * 1000.0
-
-                if use_pose and pose_classifier is not None:
-                    for trk in active_tracks:
-                        if trk.get('keypoints') is not None:
-                            kinetics = pose_classifier.classify(trk['keypoints'])
-                            trk['posture'] = kinetics.posture
-                            trk['posture_conf'] = kinetics.confidence
-                            trk['threat_level'] = kinetics.threat_level
 
                 now_ts = time.time()
                 frame_events = st.session_state.zone_monitor.update(

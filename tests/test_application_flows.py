@@ -190,3 +190,20 @@ def test_streamlit_corridor_tripwire_breach_incident_pipeline():
     assert any(s.get('track_id') == 1 for s in locker)
     assert any('CHECKPOINT TRIPWIRE' in s.get('reason', '') for s in locker)
 
+
+def test_streamlit_browser_camera_flow():
+    """Verify in-browser client camera input path runs without exceptions."""
+    from streamlit.testing.v1 import AppTest
+    from streamlit.delta_generator import DeltaGenerator
+
+    dummy_img = np.zeros((480, 640, 3), dtype=np.uint8)
+    _, enc = cv2.imencode('.jpg', dummy_img)
+    camera_buffer = BytesIO(enc.tobytes())
+
+    at = AppTest.from_file(APP_SCRIPT, default_timeout=30).run()
+    with patch.object(DeltaGenerator, 'camera_input', return_value=camera_buffer), \
+         patch('ultralytics.YOLO', return_value=lambda frame, **kw: []):
+        at.selectbox[1].select('Browser Web Camera (Any Laptop / Cloud / Remote)').run()
+
+    assert not at.exception, list(at.exception)
+
