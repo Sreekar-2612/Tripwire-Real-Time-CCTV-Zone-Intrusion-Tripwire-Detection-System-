@@ -26,9 +26,8 @@ def get_width_kwargs(stretch: bool = True):
 
 WIDTH_KWARGS = get_width_kwargs()
 
-# Fix #1: st.image does NOT accept 'width="stretch"' — always use use_container_width.
+# st.image and st.dataframe use use_container_width
 IMAGE_KWARGS = {"use_container_width": True}
-# Fix #1: st.dataframe also uses use_container_width, not width=.
 DATAFRAME_KWARGS = {"use_container_width": True}
 
 from ultralytics import YOLO
@@ -83,44 +82,401 @@ def main():
     if "siren_controller" not in st.session_state:
         st.session_state.siren_controller = SirenAlertController(enabled=True)
 
-    # Custom Cyber SOC Dark Styling
+    # High-End Dark Aerospace / Cyber SOC Style Injection
     st.markdown("""
         <style>
-        .stApp { background-color: #0b0f19; color: #f1f5f9; }
-        .main-header { font-size: 26px; font-weight: 800; color: #38bdf8; margin-bottom: 2px; letter-spacing: -0.5px; }
-        .sub-header { font-size: 13px; color: #94a3b8; margin-bottom: 16px; }
-        .soc-badge {
-            display: inline-block; padding: 4px 10px; border-radius: 9999px;
-            font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
-            margin-right: 8px;
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+        :root {
+            --soc-bg-dark: #080c15;
+            --soc-bg-card: #0d1322;
+            --soc-border: #1a2336;
+            --soc-border-accent: rgba(56, 189, 248, 0.25);
+            --soc-cyan: #06b6d4;
+            --soc-cyan-bright: #38bdf8;
+            --soc-emerald: #10b981;
+            --soc-amber: #f59e0b;
+            --soc-crimson: #ef4444;
         }
-        .badge-live { background-color: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981; }
-        .badge-dlt { background-color: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid #38bdf8; }
-        .badge-kalman { background-color: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid #a855f7; }
-        .stMetric { background-color: #111827; padding: 12px; border-radius: 8px; border: 1px solid #1f2937; }
-        @keyframes pulse-red-alert {
-            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+
+        .stApp {
+            background-color: var(--soc-bg-dark) !important;
+            color: #f1f5f9 !important;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
         }
+
+        /* Subtle Cyber Coordinate Grid Texture */
+        .stApp::before {
+            content: "";
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-image: 
+                linear-gradient(rgba(14, 165, 233, 0.025) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(14, 165, 233, 0.025) 1px, transparent 1px);
+            background-size: 36px 36px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* Sidebar Styling */
+        section[data-testid="stSidebar"] {
+            background-color: #0b101c !important;
+            border-right: 1px solid #162032 !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {
+            gap: 0.65rem !important;
+        }
+
+        /* Sidebar Module Headers */
+        .sidebar-section-header {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1.2px;
+            color: #38bdf8;
+            text-transform: uppercase;
+            border-bottom: 1px solid #1a263c;
+            padding-bottom: 4px;
+            margin-top: 14px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .sidebar-section-header span.sec-num {
+            color: #06b6d4;
+            opacity: 0.8;
+        }
+
+        /* Brand Container in Sidebar */
+        .sidebar-brand-box {
+            background: linear-gradient(180deg, #0f182c 0%, #090e1a 100%);
+            border: 1px solid #1e2d48;
+            border-top: 2px solid #06b6d4;
+            border-radius: 6px;
+            padding: 12px 14px;
+            margin-bottom: 14px;
+        }
+        .sidebar-brand-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px;
+            font-weight: 800;
+            color: #f8fafc;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sidebar-brand-tag {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            color: #06b6d4;
+            letter-spacing: 1.5px;
+            margin-top: 2px;
+        }
+
+        /* Modernized Cyber Sliders (Replacing default Streamlit red) */
+        div[data-baseweb="slider"] {
+            margin-top: 4px;
+        }
+        div[data-baseweb="slider"] div[role="slider"] {
+            background-color: #06b6d4 !important;
+            border: 2px solid #080c14 !important;
+            box-shadow: 0 0 10px rgba(6, 182, 212, 0.7) !important;
+            width: 16px !important;
+            height: 16px !important;
+        }
+        div[data-testid="stThumbValue"] {
+            color: #38bdf8 !important;
+            font-family: 'JetBrains Mono', monospace !important;
+            font-size: 11px !important;
+            font-weight: 600 !important;
+        }
+        div[data-baseweb="slider"] > div > div {
+            background: linear-gradient(90deg, #0284c7 0%, #06b6d4 100%) !important;
+        }
+
+        /* Form Controls & Inputs */
+        div[data-baseweb="select"] > div {
+            background-color: #0d1424 !important;
+            border-color: #1e293b !important;
+            color: #f1f5f9 !important;
+            border-radius: 4px !important;
+        }
+        div[data-baseweb="select"] > div:hover {
+            border-color: #06b6d4 !important;
+        }
+
+        /* Checkboxes & Radios */
+        div[data-testid="stCheckbox"] label span[role="checkbox"] {
+            border-radius: 3px !important;
+        }
+        div[data-testid="stCheckbox"] label span[role="checkbox"][aria-checked="true"] {
+            background-color: #06b6d4 !important;
+            border-color: #06b6d4 !important;
+        }
+        div[data-testid="stRadio"] label span[role="radio"][aria-checked="true"] {
+            border-color: #06b6d4 !important;
+        }
+        div[data-testid="stRadio"] label span[role="radio"][aria-checked="true"]::after {
+            background-color: #06b6d4 !important;
+        }
+
+        /* Action Buttons */
+        button[kind="primary"] {
+            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
+            border: 1px solid #38bdf8 !important;
+            box-shadow: 0 0 14px rgba(56, 189, 248, 0.25) !important;
+            color: #ffffff !important;
+            font-family: 'JetBrains Mono', monospace !important;
+            font-weight: 700 !important;
+            font-size: 12px !important;
+            letter-spacing: 0.8px !important;
+            text-transform: uppercase !important;
+            border-radius: 4px !important;
+            transition: all 0.2s ease !important;
+        }
+        button[kind="primary"]:hover {
+            background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%) !important;
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.5) !important;
+        }
+        button[kind="secondary"] {
+            background: #0f172a !important;
+            border: 1px solid #334155 !important;
+            color: #cbd5e1 !important;
+            font-family: 'JetBrains Mono', monospace !important;
+            font-weight: 600 !important;
+            font-size: 12px !important;
+            border-radius: 4px !important;
+            transition: all 0.2s ease !important;
+        }
+        button[kind="secondary"]:hover {
+            border-color: #ef4444 !important;
+            color: #f87171 !important;
+            box-shadow: 0 0 12px rgba(239, 68, 68, 0.25) !important;
+        }
+
+        /* Defense Telemetry Top Header Bar */
+        .soc-header-card {
+            background: linear-gradient(180deg, #0e1526 0%, #090e1a 100%);
+            border: 1px solid #1a253c;
+            border-top: 2px solid #06b6d4;
+            border-radius: 6px;
+            padding: 14px 18px 12px 18px;
+            margin-bottom: 16px;
+            position: relative;
+        }
+        .soc-classification-strip {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #162034;
+            padding-bottom: 8px;
+            margin-bottom: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            letter-spacing: 1.2px;
+        }
+        .soc-class-tag {
+            color: #06b6d4;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .soc-class-meta {
+            color: #64748b;
+        }
+        .soc-title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 10px;
+        }
+        .soc-main-heading {
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: #f8fafc;
+        }
+        .soc-main-heading span.accent {
+            color: #38bdf8;
+        }
+        .soc-main-heading span.dim {
+            color: #64748b;
+            font-weight: 400;
+            font-size: 16px;
+            margin-left: 8px;
+        }
+        .soc-telemetry-hud-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #94a3b8;
+            background: #070b14;
+            padding: 6px 12px;
+            border-radius: 4px;
+            border: 1px solid #151d2f;
+        }
+        .soc-telem-pill {
+            display: flex;
+            gap: 6px;
+        }
+        .soc-telem-pill .k {
+            color: #475569;
+            font-weight: 600;
+        }
+        .soc-telem-pill .v {
+            color: #38bdf8;
+            font-weight: 500;
+        }
+        .pulsing-dot-green {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background-color: #10b981;
+            box-shadow: 0 0 8px #10b981;
+            animation: pulse-green 1.5s infinite;
+        }
+        @keyframes pulse-green {
+            0% { opacity: 0.4; }
+            50% { opacity: 1; }
+            100% { opacity: 0.4; }
+        }
+
+        /* Metric HUD Cards */
+        div[data-testid="stMetric"] {
+            background: linear-gradient(180deg, #0e1526 0%, #090e1a 100%) !important;
+            border: 1px solid #1a253c !important;
+            border-top: 2px solid #06b6d4 !important;
+            border-radius: 6px !important;
+            padding: 10px 14px !important;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+            position: relative;
+        }
+        div[data-testid="stMetric"]::after {
+            content: "";
+            position: absolute;
+            top: 2px; right: 2px;
+            width: 6px; height: 6px;
+            border-top: 1px solid #38bdf8;
+            border-right: 1px solid #38bdf8;
+        }
+        div[data-testid="stMetricLabel"] {
+            color: #64748b !important;
+            font-family: 'JetBrains Mono', monospace !important;
+            font-size: 10px !important;
+            font-weight: 700 !important;
+            letter-spacing: 1px !important;
+            text-transform: uppercase !important;
+        }
+        div[data-testid="stMetricValue"] {
+            color: #f8fafc !important;
+            font-family: 'JetBrains Mono', monospace !important;
+            font-size: 20px !important;
+            font-weight: 700 !important;
+            letter-spacing: -0.5px !important;
+        }
+        div[data-testid="stMetricDelta"] {
+            font-family: 'JetBrains Mono', monospace !important;
+            font-size: 11px !important;
+        }
+
+        /* Viewport HUD Header Bar */
+        .viewport-hud-topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 10px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #64748b;
+            background: #090e1a;
+            border: 1px solid #1a253c;
+            border-bottom: none;
+            border-radius: 6px 6px 0 0;
+            margin-top: 10px;
+        }
+        .viewport-hud-title {
+            color: #38bdf8;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .viewport-hud-badge {
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #10b981;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        /* Alert Banner & Pulsing Siren */
         div[data-testid="stAlert"] {
-            animation: pulse-red-alert 1.4s infinite;
+            background: rgba(239, 68, 68, 0.12) !important;
+            border: 1px solid #ef4444 !important;
+            border-left: 4px solid #ef4444 !important;
+            border-radius: 4px !important;
+            color: #fca5a5 !important;
+            font-family: 'JetBrains Mono', monospace !important;
+            font-size: 12px !important;
+            letter-spacing: 0.5px !important;
+            animation: pulse-red-alert 1.2s infinite ease-in-out !important;
+        }
+        @keyframes pulse-red-alert {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+            50% { box-shadow: 0 0 16px 2px rgba(239, 68, 68, 0.35); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+        }
+
+        /* Snapshot and Image Framing */
+        div[data-testid="stImage"] {
+            background: #0d1322 !important;
+            border: 1px solid #1a253c !important;
+            border-radius: 4px !important;
+            padding: 3px !important;
+            transition: border-color 0.2s ease;
+        }
+        div[data-testid="stImage"]:hover {
+            border-color: #ef4444 !important;
+        }
+        div[data-testid="stImageCaption"] {
+            color: #94a3b8 !important;
+            font-family: 'JetBrains Mono', monospace !important;
+            font-size: 10px !important;
+            line-height: 1.4 !important;
+            margin-top: 4px !important;
+            background: #090e18;
+            padding: 4px 6px;
+            border-radius: 3px;
+            border: 1px solid #162032;
+        }
+
+        /* Dataframe & Tables */
+        div[data-testid="stDataFrame"] {
+            border: 1px solid #1a2336 !important;
+            border-radius: 4px !important;
+            background-color: #0b101c !important;
         }
         </style>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="main-header">🛡️ TRIP-WIRE: Cyber SOC Spatial Intelligence & BEV Radar HUD</div>', unsafe_allow_html=True)
-    st.markdown("""
-        <div class="sub-header">
-            <span class="soc-badge badge-live">● SURVEILLANCE DEMO</span>
-            <span class="soc-badge badge-dlt">CAMERA CALIBRATION REQUIRED</span>
-            <span class="soc-badge badge-kalman">4D KALMAN TRACKING</span>
-            <span>Real-Time Planar Homography, Constant-Velocity State Estimation & Threat Kinetics</span>
+    # Sidebar: Defense Console Layout
+    st.sidebar.markdown("""
+        <div class="sidebar-brand-box">
+            <div class="sidebar-brand-title">
+                <span style="color:#06b6d4;">🛡️</span> TRIP-WIRE
+            </div>
+            <div class="sidebar-brand-tag">TACTICAL SPATIAL DEFENSE // C2</div>
         </div>
     """, unsafe_allow_html=True)
 
-    # Sidebar Controls
-    st.sidebar.header("⚙️ Surveillance & Model Controls")
+    # Section 1: Perception & AI Engine
+    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">01 //</span> 👁️ PERCEPTION & AI ENGINE</div>', unsafe_allow_html=True)
 
     model_architecture = st.sidebar.selectbox(
         "AI Vision Architecture",
@@ -133,10 +489,22 @@ def main():
     )
     use_pose = "Pose" in model_architecture
 
+    conf_thresh = st.sidebar.slider("Detection Confidence", min_value=0.1, max_value=0.9, value=0.35, step=0.05)
+    infer_imgsz = st.sidebar.select_slider(
+        "Inference Resolution (imgsz)",
+        options=[384, 480, 640],
+        value=480,
+        help="Lower resolutions reduce compute cost; validate accuracy for your camera."
+    )
+
+    # Section 2: Spatial Geometry & Calibration
+    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">02 //</span> 📐 SPATIAL GEOMETRY & CALIBRATION</div>', unsafe_allow_html=True)
+
     feed_option = st.sidebar.selectbox(
         "Select Video Feed",
         [
             "Template: Corridor Tripwire Crossing (Breach Demo)",
+            "★ Flagship: Multi-Threat Perimeter Breach (Calibrated Benchmark)",
             "Template: High-Speed Fleeing Intruder (Alarm Demo)",
             "Walking Corridor CCTV (Full 60s)",
             "Hallway Intrusion",
@@ -148,7 +516,9 @@ def main():
     )
 
     video_path = None
-    if feed_option == "Template: Corridor Tripwire Crossing (Breach Demo)":
+    if feed_option == "★ Flagship: Multi-Threat Perimeter Breach (Calibrated Benchmark)":
+        video_path = "data/videos/flagship_multi_threat_benchmark.mp4"
+    elif feed_option == "Template: Corridor Tripwire Crossing (Breach Demo)":
         video_path = "data/videos/corridor_tripwire_breach.mp4"
     elif feed_option == "Template: High-Speed Fleeing Intruder (Alarm Demo)":
         video_path = "data/videos/high_speed_fleeing_breach.mp4"
@@ -181,13 +551,22 @@ def main():
             st.session_state._upload_path = str(temp_path)
             video_path = str(temp_path)
 
-    conf_thresh = st.sidebar.slider("Detection Confidence", min_value=0.1, max_value=0.9, value=0.35, step=0.05)
-    infer_imgsz = st.sidebar.select_slider(
-        "Inference Resolution (imgsz)",
-        options=[384, 480, 640],
-        value=480,
-        help="Lower resolutions reduce compute cost; validate accuracy for your camera."
+    zone_preset = st.sidebar.radio(
+        "Security Zone Layout",
+        ["Realistic Security (Side Vault & Checkpoint)", "Demo Stress Test (Center Hallway)"],
+        index=0,
+        help="Realistic layout monitors off-limits doors/alcoves. Stress test places the zone in the center walkway."
     )
+    calibration_upload = st.sidebar.file_uploader('Calibration JSON for this feed', type=['json'])
+    use_demo_calib = st.sidebar.checkbox(
+        "Apply Floor Calibration (Enable Velocity & Radar)",
+        value=True,
+        help="Applies default calibrated floor homography to estimate ground coordinates, metric velocity (km/h), and BEV radar blips when camera-specific calibration is not loaded."
+    )
+    show_grid = st.sidebar.checkbox("Project Perspective Ground Grid", value=True)
+
+    # Section 3: Thresholds & Threat Dispatch
+    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">03 //</span> 🚨 THRESHOLDS & THREAT DISPATCH</div>', unsafe_allow_html=True)
     speed_alarm = st.sidebar.slider("Speed Alarm Threshold (km/h)", min_value=1.0, max_value=25.0, value=5.0, step=0.5)
     dwell_confirm_sec = st.sidebar.slider(
         "Breach Dwell / Debounce (sec)",
@@ -197,18 +576,6 @@ def main():
         step=0.5,
         help="Target must linger inside zone for this duration to confirm breach. Prevents false alarms during normal transit."
     )
-    zone_preset = st.sidebar.radio(
-        "Security Zone Layout",
-        ["Realistic Security (Side Vault & Checkpoint)", "Demo Stress Test (Center Hallway)"],
-        index=0,
-        help="Realistic layout monitors off-limits doors/alcoves. Stress test places the zone in the center walkway."
-    )
-    show_grid = st.sidebar.checkbox("Project Perspective Ground Grid", value=True)
-    use_demo_calib = st.sidebar.checkbox(
-        "Apply Floor Calibration (Enable Velocity & Radar)",
-        value=True,
-        help="Applies default calibrated floor homography to estimate ground coordinates, metric velocity (km/h), and BEV radar blips when camera-specific calibration is not loaded."
-    )
     enable_audio_alarm = st.sidebar.checkbox(
         "🔊 Audible Alarm Siren",
         value=True,
@@ -217,7 +584,8 @@ def main():
     if "siren_controller" in st.session_state:
         st.session_state.siren_controller.set_enabled(enable_audio_alarm)
 
-    st.sidebar.markdown("---")
+    # Section 4: Mission Dispatch Controls
+    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">04 //</span> 🕹️ MISSION DISPATCH CONTROLS</div>', unsafe_allow_html=True)
     col_btn1, col_btn2 = st.sidebar.columns(2)
     with col_btn1:
         if st.button("▶️ Start Live", type="primary", key="btn_start_live", **WIDTH_KWARGS):
@@ -235,53 +603,78 @@ def main():
             st.session_state.current_feed = None
             st.rerun()
 
+    # Section 5: Forensic Export
     if st.session_state.incident_log:
-        st.sidebar.markdown("---")
-        with st.sidebar.expander(f"📥 Export Incident Logs ({len(st.session_state.incident_log)})", expanded=False):
+        st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">05 //</span> 💾 FORENSIC EXPORT</div>', unsafe_allow_html=True)
+        with st.sidebar.expander(f"📥 Export Incident Logs ({len(st.session_state.incident_log)})", expanded=True):
             df_sb = pd.DataFrame(st.session_state.incident_log[::-1])
             csv_sb = df_sb.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Download CSV", csv_sb, "tripwire_incident_audit.csv", "text/csv", key="sb_download_csv", **WIDTH_KWARGS)
             json_sb = json.dumps(st.session_state.incident_log, indent=2).encode('utf-8')
             st.download_button("📥 Download JSON", json_sb, "tripwire_forensic_report.json", "application/json", key="sb_download_json", **WIDTH_KWARGS)
 
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("**CV Algorithms Active:**")
-    st.sidebar.markdown("- `ByteTrack` Two-Stage Bipartite Association")
-    st.sidebar.markdown("- `4D Kalman Filter` (Joseph Form Stabilized)")
-    st.sidebar.markdown("- `17-Joint COCO` Kinetic Threat Classifier")
-    st.sidebar.markdown("- `Hartley-Normalized` DLT Homography")
-    st.sidebar.markdown("- `BEV Radar Map` (20m x 20m Ground Plane)")
+    # Section 6: Telemetry Architecture
+    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">06 //</span> 📡 TELEMETRY ARCHITECTURE</div>', unsafe_allow_html=True)
+    st.sidebar.markdown("""
+        <div style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#64748b; line-height:1.6; background:#070b14; padding:8px 10px; border-radius:4px; border:1px solid #141c2c;">
+            <div><span style="color:#06b6d4;">▸</span> ByteTrack Two-Stage Bipartite</div>
+            <div><span style="color:#06b6d4;">▸</span> 4D Kalman (Joseph Form)</div>
+            <div><span style="color:#06b6d4;">▸</span> 17-Joint Kinetic Classifier</div>
+            <div><span style="color:#06b6d4;">▸</span> Hartley-Normalized DLT</div>
+            <div><span style="color:#06b6d4;">▸</span> 20m x 20m BEV Radar Map</div>
+        </div>
+    """, unsafe_allow_html=True)
 
-    # Dynamic Top Metric Banners
-    col1, col2, col3, col4 = st.columns(4)
-    metric_conf = col1.empty()
+    # Main Area: Telemetry Header
+    st.markdown("""
+        <div class="soc-header-card">
+            <div class="soc-classification-strip">
+                <div class="soc-class-tag">
+                    <span class="pulsing-dot-green"></span> RESTRICTED // DEFENSE SPATIAL INTELLIGENCE &amp; THREAT OPERATIONS // C2 HUD
+                </div>
+                <div class="soc-class-meta">
+                    SECURITY POSTURE: ELEVATED &bull; STATION: SOC-ALPHA &bull; SYS-REV: v2.4
+                </div>
+            </div>
+            <div class="soc-title-row">
+                <div class="soc-main-heading">
+                    TRIP-WIRE <span class="accent">// SPATIAL DEFENSE</span> <span class="dim">&amp; BEV RADAR HUD</span>
+                </div>
+            </div>
+            <div class="soc-telemetry-hud-strip">
+                <div class="soc-telem-pill"><span class="k">SURVEY:</span> <span class="v">DLT HOMOGRAPHY [CALIBRATED]</span></div>
+                <div class="soc-telem-pill"><span class="k">KINEMATICS:</span> <span class="v">4D KALMAN FILTER [CV-STABILIZED]</span></div>
+                <div class="soc-telem-pill"><span class="k">AI ENGINE:</span> <span class="v">17-PT COCO KINETICS</span></div>
+                <div class="soc-telem-pill"><span class="k">PROJECTION:</span> <span class="v">20m x 20m BEV GROUND PLANE</span></div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Dynamic Top Metric HUD Cards (5 panels)
+    col1, col2, col3, col4, col5 = st.columns(5)
+    metric_status = col1.empty()
     metric_fps = col2.empty()
     metric_tracks = col3.empty()
-    metric_breaches = col4.empty()
+    metric_threat = col4.empty()
+    metric_breaches = col5.empty()
 
-    metric_conf.metric("Vision Architecture", "YOLOv8-Pose" if use_pose else "YOLOv8-Nano", "Active Model")
+    is_active = st.session_state.is_running
+    metric_status.metric("Stream Status", "Active Feed" if is_active else "Standby", "Online (Live)" if is_active else "Awaiting Engage")
     metric_fps.metric("Processing Speed", "Standby", "0.0 FPS")
     metric_tracks.metric("Active Targets", "0", "Awaiting Feed")
-    metric_breaches.metric("Intrusion Breaches", "0", "Secure")
-
-    st.markdown("---")
+    metric_threat.metric("Threat Index", "Nominal", "DEFCON 4 // Secure")
+    metric_breaches.metric("Intrusion Breaches", "0", "Zero Violations")
 
     # Main Display Area
     alert_banner_placeholder = st.empty()
     audio_siren_placeholder = st.empty()
+    viewport_header_placeholder = st.empty()
     dual_view_placeholder = st.empty()
     status_text = st.empty()
 
     # Evidence Locker and Incident Table Placeholders
     evidence_placeholder = st.empty()
     table_placeholder = st.empty()
-
-    calibration_upload = st.sidebar.file_uploader('Calibration JSON for this feed', type=['json'])
-    use_demo_calib = st.sidebar.checkbox(
-        "Apply Floor Calibration (Enable Velocity & Radar)",
-        value=True,
-        help="Applies floor planar homography so speed (km/h), velocity vectors, and Bird's Eye View (BEV) radar blips are active without needing manual camera survey calibration."
-    )
 
     # Handle Feed Switching
     feed_changed = (st.session_state.current_feed != video_path)
@@ -399,8 +792,7 @@ def main():
                 frame_count += 1
                 t_frame_start = time.time()
 
-                # Fix #18: run inference on the ORIGINAL clean frame, then draw
-                # grid/zones/annotations only on a display copy.
+                # Clean frame for inference
                 display_frame = frame.copy()
 
                 # Grid & Security Zone Projection on Camera View
@@ -468,7 +860,7 @@ def main():
                             except Exception:
                                 pass
 
-                # Deep Visual Perception — always infer on the ORIGINAL clean frame (fix #18)
+                # Deep Visual Perception — always infer on the ORIGINAL clean frame
                 t_infer_start = time.time()
                 with torch.inference_mode():
                     results = detector(frame, classes=[0], conf=min(conf_thresh, tracker.low_conf_threshold), imgsz=infer_imgsz, verbose=False)
@@ -496,8 +888,8 @@ def main():
                     detections,
                     homography_transformer=transformer,
                     pose_classifier=pose_classifier,
-                    zones=zones,                   # Fix #5: pass zones for proximity computation
-                    elapsed_dt=frame_elapsed_dt    # Fix #2: pass actual source-FPS interval
+                    zones=zones,
+                    elapsed_dt=frame_elapsed_dt
                 )
                 t_track_end = time.time()
                 track_ms = (t_track_end - t_track_start) * 1000.0
@@ -550,7 +942,6 @@ def main():
                         color = (0, 255, 0)      # Green: Authorized Target
                         tag_prefix = "🟢 SECURE"
 
-                    # Fix #18: draw bounding box and labels on display_frame, not on the YOLO input
                     cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
 
                     speed_label = f"{speed_kmh:.1f}km/h" if w_pos is not None else "speed unavailable"
@@ -582,20 +973,33 @@ def main():
                 # BEV Radar Rendering
                 radar_img = radar.render(zones if transformer.is_calibrated else [], radar_tracks,
                                          title="GROUND RADAR" if transformer.is_calibrated else "UNCALIBRATED - METRIC ALARMS DISABLED")
-                # Fix #18: compose with display_frame (annotated copy), not the raw inference frame
                 dual_view = BEVRadarRenderer.create_dual_view(display_frame, radar_img)
 
                 dual_view_resized = cv2.resize(dual_view, (1280, 480), interpolation=cv2.INTER_AREA)
                 dual_view_rgb = cv2.cvtColor(dual_view_resized, cv2.COLOR_BGR2RGB)
+                
+                viewport_header_placeholder.markdown("""
+                    <div class="viewport-hud-topbar">
+                        <div class="viewport-hud-title">
+                            <span>📹 PRIMARY OPTICAL FOV (LEFT) // 📡 BIRD'S EYE VIEW RADAR 20m (RIGHT)</span>
+                        </div>
+                        <div class="viewport-hud-badge">● LIVE SYNCHRONIZED</div>
+                    </div>
+                """, unsafe_allow_html=True)
                 dual_view_placeholder.image(dual_view_rgb, channels="RGB", **IMAGE_KWARGS)
 
                 elapsed = time.time() - t0
                 fps = frame_count / max(0.001, elapsed)
 
                 # Dynamically update live metrics
-                metric_conf.metric("Vision Architecture", "YOLOv8-Pose" if use_pose else "YOLOv8-Nano", f"Infer: {infer_ms:.1f}ms")
-                metric_fps.metric("Processing Speed", f"{fps:.1f} FPS", f"Track: {track_ms:.1f}ms")
+                threat_label = "CRITICAL" if breach_count > 0 else ("ELEVATED" if any(t.get('threat_level', 1) > 1 for t in active_tracks) else "NOMINAL")
+                threat_delta = "🚨 BREACH ACTIVE" if breach_count > 0 else ("Warning: Elevated Kinetics" if any(t.get('threat_level', 1) > 1 for t in active_tracks) else "Spatial Grid Secure")
+                feed_short = (feed_option[:14] + "…") if len(feed_option) > 15 else feed_option
+
+                metric_status.metric("Stream Status", "Active Feed", f"● {feed_short}")
+                metric_fps.metric("Processing Speed", f"{fps:.1f} FPS", f"Infer: {infer_ms:.1f}ms | Track: {track_ms:.1f}ms")
                 metric_tracks.metric("Active Targets", f"{len(active_tracks)}", f"{len(active_tracks)} in camera frame")
+                metric_threat.metric("Threat Index", threat_label, threat_delta)
                 metric_breaches.metric("Intrusion Breaches", f"{breach_count}", "🚨 ALARM ACTIVE" if breach_count > 0 else "Secure")
 
                 # Visual Threat Banner & Native Web Audio Siren Synthesizer
@@ -661,15 +1065,23 @@ def main():
                 # Render Incident Audit Log and Evidence Locker (Live updates)
                 if st.session_state.evidence_locker:
                     with evidence_placeholder.container():
-                        st.markdown("#### 📸 Intruder Incident Snapshot Evidence Locker")
+                        st.markdown("""
+                            <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:#38bdf8; margin-top:16px; margin-bottom:8px; display:flex; align-items:center; gap:8px;">
+                                <span>📸 FORENSIC EVIDENCE LOCKER // INTERCEPT CAPTURES</span>
+                            </div>
+                        """, unsafe_allow_html=True)
                         cols = st.columns(min(4, len(st.session_state.evidence_locker)))
                         for idx_snap, snap in enumerate(reversed(st.session_state.evidence_locker[-4:])):
                             with cols[idx_snap % 4]:
-                                st.image(snap["image"], caption=f"ID #{snap['track_id']} | {snap['time_str']} | {snap['action']}\n{snap['reason']}", **IMAGE_KWARGS)
+                                st.image(snap["image"], caption=f"TARGET #{snap['track_id']} | {snap['time_str']} | {snap['action']}\n{snap['reason']} ({snap['speed']})", **IMAGE_KWARGS)
 
                 if st.session_state.incident_log:
                     with table_placeholder.container():
-                        st.markdown(f"#### 📋 Real-Time Incident Audit Log ({len(st.session_state.incident_log)} Events Recorded)")
+                        st.markdown(f"""
+                            <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:#38bdf8; margin-top:16px; margin-bottom:8px;">
+                                📋 INCIDENT AUDIT TRAIL // REAL-TIME EVENT STREAM ({len(st.session_state.incident_log)} EVENTS LOGGED)
+                            </div>
+                        """, unsafe_allow_html=True)
                         df_log = pd.DataFrame(st.session_state.incident_log[::-1])
                         st.dataframe(df_log, height=180, **DATAFRAME_KWARGS)
                         st.caption("ℹ️ *To export CSV or JSON forensics reports, click **⏹️ Stop Feed** in the sidebar or expand **📥 Export Incident Logs**.*")
@@ -688,15 +1100,23 @@ def main():
         status_text.warning("⏸️ Surveillance pipeline is paused. Click **▶️ Start Live** in the sidebar to run.")
         if st.session_state.evidence_locker:
             with evidence_placeholder.container():
-                st.markdown("#### 📸 Intruder Incident Snapshot Evidence Locker")
+                st.markdown("""
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:#38bdf8; margin-top:16px; margin-bottom:8px; display:flex; align-items:center; gap:8px;">
+                        <span>📸 FORENSIC EVIDENCE LOCKER // INTERCEPT CAPTURES</span>
+                    </div>
+                """, unsafe_allow_html=True)
                 cols = st.columns(min(4, len(st.session_state.evidence_locker)))
                 for idx_snap, snap in enumerate(reversed(st.session_state.evidence_locker[-4:])):
                     with cols[idx_snap % 4]:
-                        st.image(snap["image"], caption=f"ID #{snap['track_id']} | {snap['time_str']} | {snap['action']}\n{snap['reason']}", **IMAGE_KWARGS)
+                        st.image(snap["image"], caption=f"TARGET #{snap['track_id']} | {snap['time_str']} | {snap['action']}\n{snap['reason']} ({snap['speed']})", **IMAGE_KWARGS)
 
         if st.session_state.incident_log:
             with table_placeholder.container():
-                st.markdown(f"#### 📋 Real-Time Incident Audit Log ({len(st.session_state.incident_log)} Total Events)")
+                st.markdown(f"""
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:#38bdf8; margin-top:16px; margin-bottom:8px;">
+                        📋 INCIDENT AUDIT TRAIL // REAL-TIME EVENT STREAM ({len(st.session_state.incident_log)} TOTAL EVENTS)
+                    </div>
+                """, unsafe_allow_html=True)
                 df_log = pd.DataFrame(st.session_state.incident_log[::-1])
                 st.dataframe(df_log, height=180, **DATAFRAME_KWARGS)
                 col_csv, col_json = st.columns(2)

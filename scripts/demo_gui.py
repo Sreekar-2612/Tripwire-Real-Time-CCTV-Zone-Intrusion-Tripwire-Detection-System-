@@ -39,6 +39,7 @@ class TripwireInteractiveDemo:
             "3": "data/videos/walking_cctv.mp4",
             "4": "data/videos/cctv_sample.mp4",
             "5": "data/videos/solutions_ci_demo.mp4",
+            "6": "data/videos/flagship_multi_threat_benchmark.mp4",
             "0": "0"  # Webcam
         }
         self.current_video_key = "1"

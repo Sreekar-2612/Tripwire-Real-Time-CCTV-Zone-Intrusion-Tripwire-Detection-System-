@@ -61,6 +61,7 @@ async def protect_camera(request: Request, call_next):
 class WebStreamEngine:
     def __init__(self):
         self.videos = {
+            "flagship": "data/videos/flagship_multi_threat_benchmark.mp4",
             "template_tripwire": "data/videos/corridor_tripwire_breach.mp4",
             "template_speed": "data/videos/high_speed_fleeing_breach.mp4",
             "walking": "data/videos/walking_cctv.mp4",
@@ -68,7 +69,7 @@ class WebStreamEngine:
             "crossing": "data/videos/solutions_ci_demo.mp4",
             "webcam": "0"
         }
-        self.active_feed = "template_tripwire"
+        self.active_feed = "flagship"
         self.conf = 0.35
         self.use_pose = False
         self.active_breach_count = 0
