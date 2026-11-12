@@ -114,8 +114,8 @@ def main():
         .sidebar-brand-title *,
         .sidebar-section-header,
         .sidebar-section-header *,
-        div[data-testid="stMetricLabel"],
-        div[data-testid="stMetricLabel"] *,
+        div[data-testid="stMetricValue"],
+        div[data-testid="stMetricValue"] *,
         .viewport-hud-title,
         .viewport-hud-title *,
         .section-title,
@@ -148,11 +148,38 @@ def main():
             -webkit-backdrop-filter: blur(16px) !important;
         }
 
+        /* Floating 3D Spheres & Matrix Grid Keyframe Motion */
+        @keyframes floatSpheres {
+            0% {
+                transform: translate3d(0, 0, 0) scale(1);
+            }
+            33% {
+                transform: translate3d(16px, -22px, 0) scale(1.02);
+            }
+            66% {
+                transform: translate3d(-18px, 14px, 0) scale(0.98);
+            }
+            100% {
+                transform: translate3d(0, 0, 0) scale(1);
+            }
+        }
+        @keyframes floatSpheresGrid {
+            0% {
+                transform: translate3d(0, 0, 0);
+            }
+            50% {
+                transform: translate3d(-10px, -15px, 0);
+            }
+            100% {
+                transform: translate3d(0, 0, 0);
+            }
+        }
+
         /* Soft Floating 3D White Translucent Glass Spheres / Orbs */
         .stApp::before {
             content: "";
             position: fixed;
-            top: 0; left: 0; width: 100vw; height: 100vh;
+            top: -6%; left: -6%; width: 112vw; height: 112vh;
             background:
                 radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.98) 0%, rgba(240, 244, 252, 0.85) 40%, rgba(220, 228, 242, 0.35) 65%, transparent 78%),
                 radial-gradient(circle at 82% 16%, rgba(255, 255, 255, 0.96) 0%, rgba(238, 243, 251, 0.8) 45%, rgba(218, 226, 240, 0.35) 70%, transparent 82%),
@@ -163,17 +190,21 @@ def main():
             pointer-events: none;
             z-index: 0;
             filter: blur(6px);
+            animation: floatSpheres 28s ease-in-out infinite alternate;
+            will-change: transform;
         }
 
         /* Subtle Dotted Matrix Grid Pattern */
         .stApp::after {
             content: "";
             position: fixed;
-            top: 0; left: 0; width: 100vw; height: 100vh;
+            top: -4%; left: -4%; width: 108vw; height: 108vh;
             background-image: radial-gradient(rgba(100, 116, 139, 0.22) 1.25px, transparent 1.25px);
             background-size: 26px 26px;
             pointer-events: none;
             z-index: 0;
+            animation: floatSpheresGrid 34s ease-in-out infinite alternate;
+            will-change: transform;
         }
 
         /* Sidebar Styling: Translucent Frosted Glass */
@@ -194,50 +225,102 @@ def main():
             font-size: 12px !important;
         }
 
-        /* Sidebar Brand Box */
+        /* Continuous Pulse for Radar Beacon Dot */
+        @keyframes radarBeacon {
+            0% {
+                transform: scale(0.9);
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.75);
+            }
+            70% {
+                transform: scale(1.15);
+                box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+            }
+            100% {
+                transform: scale(0.9);
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
+        }
+
+        /* Sidebar Brand Box (Creative Futuristic Glass Badge) */
         .sidebar-brand-box {
-            background: var(--glass-card-bg);
-            backdrop-filter: blur(24px) saturate(180%);
-            -webkit-backdrop-filter: blur(24px) saturate(180%);
-            border: 1px solid var(--glass-card-border);
-            border-radius: 20px;
-            padding: 16px 18px;
-            margin-bottom: 16px;
-            box-shadow: var(--glass-card-shadow);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(238, 245, 255, 0.75) 100%) !important;
+            backdrop-filter: blur(28px) saturate(190%) !important;
+            -webkit-backdrop-filter: blur(28px) saturate(190%) !important;
+            border: 1.5px solid rgba(255, 255, 255, 0.95) !important;
+            border-radius: 20px !important;
+            padding: 16px 18px !important;
+            margin-bottom: 16px !important;
+            box-shadow: 0 15px 35px rgba(37, 99, 235, 0.08), inset 0 1px 2px rgba(255, 255, 255, 1.0) !important;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+            cursor: default;
+        }
+        .sidebar-brand-box:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 20px 45px rgba(37, 99, 235, 0.15), inset 0 1px 2px rgba(255, 255, 255, 1.0) !important;
+            border-color: rgba(37, 99, 235, 0.35) !important;
         }
         .sidebar-brand-title {
-            font-size: 20px;
-            font-weight: 800;
-            color: var(--text-primary);
-            letter-spacing: -0.3px;
+            font-family: 'Hosta', 'Host Grotesk', sans-serif !important;
+            font-size: 20px !important;
+            font-weight: 800 !important;
+            color: #0f172a !important;
+            letter-spacing: -0.5px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+        }
+        .radar-beacon {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background-color: #10b981;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.85);
+            animation: radarBeacon 1.8s infinite ease-in-out;
+        }
+        .sidebar-brand-sub {
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-size: 10px !important;
+            font-weight: 800 !important;
+            color: #475569 !important;
+            letter-spacing: 1.1px !important;
+            text-transform: uppercase !important;
+            margin-top: 5px !important;
+        }
+        .sidebar-brand-microbadge {
+            display: inline-block !important;
+            margin-top: 8px !important;
+            padding: 3px 8px !important;
+            background: rgba(37, 99, 235, 0.08) !important;
+            border: 1px solid rgba(37, 99, 235, 0.22) !important;
+            border-radius: 7px !important;
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-size: 9px !important;
+            font-weight: 800 !important;
+            letter-spacing: 0.6px !important;
+            color: #2563eb !important;
         }
         .sidebar-brand-tag {
-            font-family: Arial, Helvetica, sans-serif !important;
-            font-size: 10px;
-            font-weight: bold;
-            color: var(--text-muted);
-            letter-spacing: 1.2px;
-            margin-top: 4px;
+            display: none !important;
         }
 
         /* Sidebar Module Headers */
         .sidebar-section-header {
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 0.8px;
-            color: var(--text-primary);
-            text-transform: uppercase;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-            padding-bottom: 6px;
-            margin-top: 18px;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .sidebar-section-header span.sec-num {
-            color: var(--text-muted);
-            font-weight: 700;
+            white-space: nowrap !important;
+            font-family: 'Hosta', 'Host Grotesk', sans-serif !important;
+            font-weight: 700 !important;
+            font-size: 11px !important;
+            letter-spacing: 1px !important;
+            color: #475569 !important;
+            text-transform: uppercase !important;
+            border-bottom: 1.5px solid rgba(226, 232, 240, 0.8) !important;
+            padding-bottom: 6px !important;
+            margin-top: 18px !important;
+            margin-bottom: 10px !important;
+            display: flex !important;
+            align-items: center !important;
         }
 
         /* Elegant Minimalist Sliders: Charcoal Track & Solid White/Silver Glass Thumb */
@@ -315,6 +398,26 @@ def main():
             background-color: #0f172a !important;
         }
 
+        /* Universal Smooth Transitions for Interactive Elements */
+        button,
+        button *,
+        div[data-testid="stMetric"],
+        .soc-header-card,
+        .sidebar-brand-box,
+        div[data-testid="stImage"],
+        div[data-testid="stExpander"],
+        div[data-baseweb="slider"],
+        div[data-baseweb="slider"] *,
+        div[data-baseweb="select"] > div,
+        input,
+        select,
+        textarea,
+        div[data-testid="stCheckbox"],
+        div[data-testid="stRadio"],
+        div[data-testid="stFileUploader"] section {
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        }
+
         /* Crisp Rounded Glass Action Buttons */
         button[kind="primary"] {
             background: #0f172a !important;
@@ -326,16 +429,15 @@ def main():
             letter-spacing: 0.3px !important;
             border-radius: 12px !important;
             box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.2) !important;
-            transition: all 0.2s ease !important;
         }
         button[kind="primary"]:hover {
             background: #1e293b !important;
             border-color: #1e293b !important;
-            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.22) !important;
-            transform: translateY(-1px);
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25) !important;
+            transform: translateY(-2px) !important;
         }
         button[kind="secondary"] {
-            background: rgba(255, 255, 255, 0.8) !important;
+            background: rgba(255, 255, 255, 0.85) !important;
             backdrop-filter: blur(16px) !important;
             -webkit-backdrop-filter: blur(16px) !important;
             border: 1px solid rgba(0, 0, 0, 0.12) !important;
@@ -345,27 +447,30 @@ def main():
             font-size: 13px !important;
             border-radius: 12px !important;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.95) !important;
-            transition: all 0.2s ease !important;
         }
         button[kind="secondary"]:hover {
             background: #ffffff !important;
             border-color: #0f172a !important;
             color: #0f172a !important;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
-            transform: translateY(-1px);
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18) !important;
+            transform: translateY(-2px) !important;
         }
 
         /* Telemetry Header Card (Light Glassmorphism Bar) */
         .soc-header-card {
             background: var(--glass-card-bg);
-            backdrop-filter: blur(24px) saturate(180%);
-            -webkit-backdrop-filter: blur(24px) saturate(180%);
-            border: 1px solid var(--glass-card-border);
+            backdrop-filter: blur(28px) saturate(190%);
+            -webkit-backdrop-filter: blur(28px) saturate(190%);
+            border: 1.5px solid var(--glass-card-border);
             border-radius: 20px;
             padding: 18px 24px;
             margin-bottom: 20px;
             box-shadow: var(--glass-card-shadow);
             position: relative;
+        }
+        .soc-header-card:hover {
+            box-shadow: 0 25px 50px rgba(37, 99, 235, 0.08), inset 0 1px 2px rgba(255, 255, 255, 1) !important;
+            border-color: rgba(37, 99, 235, 0.25) !important;
         }
         .soc-classification-strip {
             display: flex;
@@ -454,37 +559,52 @@ def main():
             100% { opacity: 0.4; }
         }
 
-        /* Metric HUD Cards (Clean Frosted Glass Tiles) */
+        /* Metric HUD Cards (Clean Frosted Glass Tiles with High Contrast & Hover) */
         div[data-testid="stMetric"] {
             background: var(--glass-card-bg) !important;
             backdrop-filter: blur(24px) saturate(180%) !important;
             -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
-            border: 1px solid var(--glass-card-border) !important;
+            border: 1.5px solid var(--glass-card-border) !important;
             border-radius: 20px !important;
-            padding: 14px 18px !important;
+            padding: 16px 20px !important;
             box-shadow: var(--glass-card-shadow) !important;
             position: relative;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
         }
-        div[data-testid="stMetricLabel"] {
-            color: var(--text-primary) !important;
-            font-family: 'Hosta', 'Host Grotesk', sans-serif !important;
-            font-size: 12px !important;
-            font-weight: 700 !important;
-            letter-spacing: 0.5px !important;
+        div[data-testid="stMetric"]:hover {
+            transform: translateY(-4px) scale(1.01) !important;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.08) !important;
+            border-color: rgba(37, 99, 235, 0.4) !important;
+        }
+        div[data-testid="stMetricLabel"],
+        div[data-testid="stMetricLabel"] *,
+        div[data-testid="stMetricLabel"] p,
+        div[data-testid="stMetricLabel"] span,
+        div[data-testid="stMetricLabel"] div,
+        div[data-testid="stMetricLabel"] label {
+            color: #334155 !important;
+            font-family: Arial, sans-serif !important;
+            font-weight: 800 !important;
+            font-size: 11px !important;
             text-transform: uppercase !important;
+            letter-spacing: 0.8px !important;
         }
-        div[data-testid="stMetricValue"] {
-            color: var(--text-primary) !important;
-            font-family: Arial, Helvetica, sans-serif !important;
-            font-size: 24px !important;
-            font-weight: bold !important;
+        div[data-testid="stMetricValue"],
+        div[data-testid="stMetricValue"] *,
+        div[data-testid="stMetricValue"] div {
+            color: #0f172a !important;
+            font-family: 'Hosta', 'Host Grotesk', sans-serif !important;
+            font-weight: 800 !important;
+            font-size: 26px !important;
             letter-spacing: -0.5px !important;
         }
-        div[data-testid="stMetricDelta"] {
-            font-family: Arial, Helvetica, sans-serif !important;
-            font-weight: bold !important;
+        div[data-testid="stMetricDelta"],
+        div[data-testid="stMetricDelta"] *,
+        div[data-testid="stMetricDelta"] svg {
+            font-family: Arial, sans-serif !important;
+            font-weight: 800 !important;
             font-size: 11px !important;
-            color: var(--text-secondary) !important;
+            color: #475569 !important;
         }
 
         /* Viewport HUD Header Bar */
@@ -505,6 +625,7 @@ def main():
             border-radius: 20px 20px 0 0;
             margin-top: 14px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
         }
         .viewport-hud-title {
             font-family: 'Hosta', 'Host Grotesk', sans-serif !important;
@@ -522,20 +643,77 @@ def main():
             font-weight: bold;
         }
 
-        /* Alert Banner */
+        /* Frosted Glass Base Alert Container */
         div[data-testid="stAlert"] {
-            background: rgba(254, 242, 242, 0.9) !important;
-            backdrop-filter: blur(20px) !important;
-            -webkit-backdrop-filter: blur(20px) !important;
-            border: 1px solid #fca5a5 !important;
-            border-left: 5px solid #ef4444 !important;
-            border-radius: 14px !important;
-            color: #991b1b !important;
-            font-family: Arial, Helvetica, sans-serif !important;
+            background: rgba(255, 255, 255, 0.92) !important;
+            backdrop-filter: blur(28px) saturate(190%) !important;
+            -webkit-backdrop-filter: blur(28px) saturate(190%) !important;
+            border: 1.5px solid rgba(226, 232, 240, 0.9) !important;
+            border-radius: 16px !important;
+            color: #0f172a !important;
+            font-family: Arial, sans-serif !important;
             font-weight: bold !important;
-            font-size: 12px !important;
-            box-shadow: 0 8px 24px rgba(239, 68, 68, 0.12) !important;
+            font-size: 13px !important;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05) !important;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        }
+        div[data-testid="stAlert"] * {
+            font-family: Arial, sans-serif !important;
+            font-weight: bold !important;
+        }
+        div[data-testid="stAlertContainer"] {
+            background: transparent !important;
+            border: none !important;
+        }
+
+        /* Frosted Glass Warning Alert Banner (High Contrast Slate & Amber Accent) */
+        div[data-testid="stAlert"]:has([data-testid*="Warning"]),
+        div[data-testid="stAlert"]:has([data-testid="stAlertContentWarning"]),
+        div[data-testid="stAlertContainer"]:has([data-testid*="Warning"]),
+        div[data-testid="stAlertContentWarning"] {
+            background: rgba(255, 255, 255, 0.92) !important;
+            backdrop-filter: blur(28px) saturate(190%) !important;
+            -webkit-backdrop-filter: blur(28px) saturate(190%) !important;
+            border: 1.5px solid rgba(245, 158, 11, 0.4) !important;
+            border-left: 6px solid #f59e0b !important;
+            border-radius: 16px !important;
+            color: #0f172a !important;
+            box-shadow: 0 12px 32px rgba(245, 158, 11, 0.09), 0 2px 6px rgba(0, 0, 0, 0.03) !important;
+        }
+        div[data-testid="stAlert"]:has([data-testid*="Warning"]) *,
+        div[data-testid="stAlert"]:has([data-testid="stAlertContentWarning"]) *,
+        div[data-testid="stAlertContentWarning"] * {
+            color: #0f172a !important;
+            font-family: Arial, sans-serif !important;
+            font-weight: 800 !important;
+        }
+        div[data-testid="stAlert"]:has([data-testid*="Warning"]) svg,
+        div[data-testid="stAlertContentWarning"] svg {
+            fill: #f59e0b !important;
+            color: #f59e0b !important;
+        }
+
+        /* Critical Perimeter Threat Error Alert Banner */
+        div[data-testid="stAlert"]:has([data-testid*="Error"]),
+        div[data-testid="stAlert"]:has([data-testid="stAlertContentError"]),
+        div[data-testid="stAlertContainer"]:has([data-testid*="Error"]),
+        div[data-testid="stAlertContentError"] {
+            background: rgba(254, 242, 242, 0.92) !important;
+            backdrop-filter: blur(24px) saturate(180%) !important;
+            -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+            border: 1.5px solid #fca5a5 !important;
+            border-left: 6px solid #ef4444 !important;
+            border-radius: 16px !important;
+            color: #991b1b !important;
+            box-shadow: 0 12px 30px rgba(239, 68, 68, 0.16) !important;
             animation: pulse-red-alert 1.5s infinite ease-in-out !important;
+        }
+        div[data-testid="stAlert"]:has([data-testid*="Error"]) *,
+        div[data-testid="stAlert"]:has([data-testid="stAlertContentError"]) *,
+        div[data-testid="stAlertContentError"] * {
+            color: #991b1b !important;
+            font-family: Arial, sans-serif !important;
+            font-weight: 800 !important;
         }
         @keyframes pulse-red-alert {
             0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
@@ -552,14 +730,15 @@ def main():
             border-radius: 18px !important;
             padding: 8px !important;
             box-shadow: 0 14px 30px rgba(0, 0, 0, 0.03), inset 0 1px 1px rgba(255, 255, 255, 0.95) !important;
-            transition: all 0.2s ease;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
         }
         div[data-testid="stImage"] img {
             border-radius: 12px !important;
         }
         div[data-testid="stImage"]:hover {
-            border-color: rgba(15, 23, 42, 0.2) !important;
-            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.06) !important;
+            border-color: rgba(37, 99, 235, 0.35) !important;
+            box-shadow: 0 18px 40px rgba(37, 99, 235, 0.09) !important;
+            transform: translateY(-2px);
         }
         div[data-testid="stImageCaption"] {
             color: #334155 !important;
@@ -585,12 +764,79 @@ def main():
             overflow: hidden !important;
         }
 
-        /* File Uploader & Expander */
+        /* File Uploader (Frosted Glass Dropzone & Clean Secondary Action) */
         div[data-testid="stFileUploader"] section {
-            background: rgba(255, 255, 255, 0.65) !important;
-            border: 1.5px dashed rgba(0, 0, 0, 0.15) !important;
-            border-radius: 14px !important;
-            padding: 12px !important;
+            border: 1.5px dashed rgba(37, 99, 235, 0.35) !important;
+            background: rgba(255, 255, 255, 0.75) !important;
+            backdrop-filter: blur(20px) !important;
+            -webkit-backdrop-filter: blur(20px) !important;
+            border-radius: 16px !important;
+            padding: 14px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 10px !important;
+            text-align: center !important;
+        }
+        div[data-testid="stFileUploader"] section > div {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 8px !important;
+            width: 100% !important;
+        }
+        div[data-testid="stFileUploader"] button,
+        div[data-testid="stFileUploader"] button[kind="secondary"],
+        div[data-testid="stFileUploader"] section button {
+            background: #0f172a !important;
+            color: #ffffff !important;
+            border: 1px solid #0f172a !important;
+            border-radius: 10px !important;
+            font-family: Arial, sans-serif !important;
+            font-weight: bold !important;
+            white-space: nowrap !important;
+            padding: 6px 16px !important;
+            font-size: 12px !important;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12) !important;
+            transition: all 0.2s ease !important;
+        }
+        div[data-testid="stFileUploader"] button:hover,
+        div[data-testid="stFileUploader"] button[kind="secondary"]:hover,
+        div[data-testid="stFileUploader"] section button:hover {
+            background: #1e293b !important;
+            border-color: #1e293b !important;
+            color: #ffffff !important;
+        }
+        div[data-testid="stFileUploader"] button *,
+        div[data-testid="stFileUploader"] button[kind="secondary"] *,
+        div[data-testid="stFileUploader"] section button * {
+            color: #ffffff !important;
+            fill: #ffffff !important;
+            white-space: nowrap !important;
+        }
+        div[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzoneInstructions"] {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+            text-align: center !important;
+            margin-top: 4px !important;
+            width: 100% !important;
+        }
+        div[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzoneInstructions"] span,
+        div[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzoneInstructions"] small {
+            display: block !important;
+            font-family: Arial, sans-serif !important;
+            font-size: 11px !important;
+            color: #475569 !important;
+            font-weight: 500 !important;
+            text-align: center !important;
+            white-space: normal !important;
+            word-break: break-word !important;
+            overflow: visible !important;
+            line-height: 1.4 !important;
         }
         div[data-testid="stExpander"] {
             background: var(--glass-card-bg) !important;
@@ -640,13 +886,17 @@ def main():
     # Sidebar: Defense Console Layout
     st.sidebar.markdown("""
         <div class="sidebar-brand-box">
-            <div class="sidebar-brand-title">TRIP-WIRE</div>
-            <div class="sidebar-brand-tag">SPATIAL DEFENSE // C2 HUD</div>
+            <div class="sidebar-brand-title">
+                <span>TRIP-WIRE</span>
+                <span class="radar-beacon"></span>
+            </div>
+            <div class="sidebar-brand-sub">SPATIAL DEFENSE // C2 INTELLIGENCE</div>
+            <div class="sidebar-brand-microbadge">[REAL-TIME BEV • 4D KALMAN]</div>
         </div>
     """, unsafe_allow_html=True)
 
     # Section 1: Perception & AI Engine
-    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">01 //</span> PERCEPTION & AI ENGINE</div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-section-header">PERCEPTION & AI ENGINE</div>', unsafe_allow_html=True)
 
     model_architecture = st.sidebar.selectbox(
         "AI Vision Architecture",
@@ -668,7 +918,7 @@ def main():
     )
 
     # Section 2: Spatial Geometry & Calibration
-    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">02 //</span> SPATIAL GEOMETRY & CALIBRATION</div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-section-header">SPATIAL GEOMETRY & CALIBRATION</div>', unsafe_allow_html=True)
 
     feed_option = st.sidebar.selectbox(
         "Select Video Feed",
@@ -737,7 +987,7 @@ def main():
     show_grid = st.sidebar.checkbox("Project Perspective Ground Grid", value=True)
 
     # Section 3: Thresholds & Threat Dispatch
-    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">03 //</span> THRESHOLDS & THREAT DISPATCH</div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-section-header">THRESHOLDS & THREAT DISPATCH</div>', unsafe_allow_html=True)
     speed_alarm = st.sidebar.slider("Speed Alarm Threshold (km/h)", min_value=1.0, max_value=25.0, value=5.0, step=0.5)
     dwell_confirm_sec = st.sidebar.slider(
         "Breach Dwell / Debounce (sec)",
@@ -757,7 +1007,7 @@ def main():
         st.session_state.siren_controller.set_enabled(enable_audio_alarm)
 
     # Section 4: Mission Dispatch Controls
-    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">04 //</span> MISSION DISPATCH CONTROLS</div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-section-header">MISSION DISPATCH CONTROLS</div>', unsafe_allow_html=True)
     col_btn1, col_btn2 = st.sidebar.columns(2)
     with col_btn1:
         if st.button("Start Live", type="primary", key="btn_start_live", **WIDTH_KWARGS):
@@ -777,7 +1027,7 @@ def main():
 
     # Section 5: Forensic Export
     if st.session_state.incident_log:
-        st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">05 //</span> FORENSIC EXPORT</div>', unsafe_allow_html=True)
+        st.sidebar.markdown('<div class="sidebar-section-header">FORENSIC EXPORT</div>', unsafe_allow_html=True)
         with st.sidebar.expander(f"Export Incident Logs ({len(st.session_state.incident_log)})", expanded=True):
             df_sb = pd.DataFrame(st.session_state.incident_log[::-1])
             csv_sb = df_sb.to_csv(index=False).encode('utf-8')
@@ -786,7 +1036,7 @@ def main():
             st.download_button("Download JSON", json_sb, "tripwire_forensic_report.json", "application/json", key="sb_download_json", **WIDTH_KWARGS)
 
     # Section 6: Telemetry Architecture
-    st.sidebar.markdown('<div class="sidebar-section-header"><span class="sec-num">06 //</span> TELEMETRY ARCHITECTURE</div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-section-header">TELEMETRY ARCHITECTURE</div>', unsafe_allow_html=True)
     st.sidebar.markdown("""
         <div class="sidebar-telemetry-box">
             <div><span class="telemetry-bullet">•</span> ByteTrack Two-Stage Bipartite</div>
