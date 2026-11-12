@@ -255,6 +255,11 @@ def main():
     table_placeholder = st.empty()
 
     calibration_upload = st.sidebar.file_uploader('Calibration JSON for this feed', type=['json'])
+    use_demo_calib = st.sidebar.checkbox(
+        "Apply Floor Calibration (Enable Velocity & Radar)",
+        value=True,
+        help="Applies floor planar homography so speed (km/h), velocity vectors, and Bird's Eye View (BEV) radar blips are active without needing manual camera survey calibration."
+    )
 
     # Handle Feed Switching
     feed_changed = (st.session_state.current_feed != video_path)
@@ -323,8 +328,8 @@ def main():
         if not transformer.is_calibrated and use_demo_calib and Path("data/calibration.json").exists():
             transformer = HomographyTransformer.load_calibration("data/calibration.json")
         if not transformer.is_calibrated:
-            st.warning('This feed is uncalibrated. Ground positions, metric speed, and spatial alarms are disabled. Select a calibration JSON for this camera or check "Apply Floor Calibration".')
-        calibration_key = (str(video_path), transformer.H.tobytes() if transformer.is_calibrated else None, zone_preset, use_pose)
+            st.warning('This feed is uncalibrated. Ground positions, metric speed, and spatial alarms are disabled. Check "Apply Floor Calibration" or upload a calibration JSON for this camera.')
+        calibration_key = (str(video_path), transformer.H.tobytes() if transformer.is_calibrated else None, zone_preset, use_pose, use_demo_calib)
         if st.session_state.get('_calibration_key') != calibration_key:
             st.session_state.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
             st.session_state.zone_monitor = ZoneMonitor()
