@@ -53,16 +53,14 @@ def get_pose_detector():
     """Caches YOLOv8 pose detector in memory for kinetic threat classification."""
     return YOLO("yolov8n-pose.pt")
 
-def open_capture_source(source, max_retries: int = 2):
+def open_capture_source(source, max_retries: int = 1):
     """
-    Resilient multi-backend video and webcam capture initialization.
-    For webcams (integers or numeric strings):
-      - Tries primary index with DirectShow (cv2.CAP_DSHOW) on Windows with explicit retries.
-      - Falls back to MSMF (cv2.CAP_MSMF).
-      - Falls back to default backend (cv2.CAP_ANY).
-      - If requested index is unreachable, automatically probes alternative connected indices (0, 1, 2).
-      - Executes warmup reads to ensure the sensor is transmitting valid image data.
-      - Sets 640x480 resolution and buffer size = 1 for minimal latency.
+    Fast, resilient multi-backend video and webcam capture initialization.
+    For webcams:
+      - Tries requested index with DirectShow (cv2.CAP_DSHOW) on Windows, followed by default backend.
+      - If requested index fails, probes adjacent index (1 if 0, 0 if 1).
+      - Retains and returns opened camera handle without premature timeout discards.
+      - Sets 640x480 resolution.
     For video files:
       - Opens file with standard cv2.VideoCapture(source).
     Returns:
@@ -78,56 +76,48 @@ def open_capture_source(source, max_retries: int = 2):
     req_idx = int(source)
     backends = [
         ("DirectShow", cv2.CAP_DSHOW),
-        ("Media Foundation", cv2.CAP_MSMF),
-        ("Default", cv2.CAP_ANY)
-    ] if sys.platform.startswith("win") else [("Default", cv2.CAP_ANY)]
+        ("Default", None)
+    ] if sys.platform.startswith("win") else [("Default", None)]
 
-    # Check requested index first, followed by alternate device indexes
-    candidate_indices = [req_idx] + [i for i in [0, 1, 2] if i != req_idx]
+    # Check requested index first, then adjacent device index
+    candidate_indices = [req_idx]
+    alt_idx = 1 if req_idx == 0 else 0
+    candidate_indices.append(alt_idx)
 
     for idx in candidate_indices:
         for b_name, b_flag in backends:
-            for attempt in range(max_retries):
+            try:
+                cap = cv2.VideoCapture(idx, b_flag) if b_flag is not None else cv2.VideoCapture(idx)
+            except Exception:
+                continue
+            if cap.isOpened():
                 try:
-                    cap = cv2.VideoCapture(idx, b_flag)
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
                 except Exception:
-                    continue
-                if cap.isOpened():
+                    pass
+                # Quick warmup frame check (doesn't discard opened camera)
+                for _ in range(3):
                     try:
-                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                        ret, f = cap.read()
+                        if ret and f is not None and f.size > 0:
+                            break
                     except Exception:
                         pass
-                    # Verify camera transmits actual frames with warmup reads
-                    warmup_ok = False
-                    for _ in range(10):
-                        try:
-                            ret, f = cap.read()
-                            if ret and f is not None and f.size > 0:
-                                warmup_ok = True
-                                break
-                        except Exception:
-                            pass
-                        time.sleep(0.08)
-                    if warmup_ok:
-                        return cap, idx, b_name, None
-                    try:
-                        cap.release()
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        cap.release()
-                    except Exception:
-                        pass
-                time.sleep(0.12)
+                    time.sleep(0.04)
+                return cap, idx, b_name, None
+            else:
+                try:
+                    cap.release()
+                except Exception:
+                    pass
 
     err = (
         f"Could not access webcam device index #{req_idx}.\n\n"
         "• Ensure camera is connected and recognized in Windows Device Manager.\n"
         "• Check Windows Settings > Privacy & security > Camera to ensure apps can access your camera.\n"
-        "• Ensure another application (Zoom, Teams, Discord, WhatsApp, Chrome) is not currently locking the webcam."
+        "• Ensure another application (Zoom, Teams, Discord, WhatsApp, Chrome) is not currently locking the webcam.\n"
+        "• Remote / Multi-Laptop Tip: If viewing from another laptop, select 'Browser Web Camera' in the sidebar to stream directly from your current device's browser!"
     )
     return None, req_idx, None, err
 
@@ -1077,6 +1067,7 @@ def main():
             "Pedestrian Crossing",
             "Live Laptop Camera (Webcam 0)",
             "External Camera (Webcam 1)",
+            "Browser Web Camera (Any Laptop / Cloud / Remote)",
             "Upload Custom MP4"
         ],
         index=0
@@ -1099,6 +1090,8 @@ def main():
         video_path = 0
     elif feed_option == "External Camera (Webcam 1)":
         video_path = 1
+    elif feed_option == "Browser Web Camera (Any Laptop / Cloud / Remote)":
+        video_path = "browser_camera"
     elif feed_option == "Upload Custom MP4":
         uploaded_file = st.sidebar.file_uploader("Upload video file", type=["mp4", "avi", "mov"])
         if uploaded_file:
@@ -1257,7 +1250,141 @@ def main():
         st.session_state.tracker = MultiTargetTracker(min_hits=2, max_age=15, iou_threshold=0.3)
         st.session_state.zone_monitor = ZoneMonitor()
 
-    if st.session_state.is_running and video_path is not None:
+    if video_path == "browser_camera":
+        metric_status.metric("Stream Status", "Browser Camera", "Client HTML5")
+        st.markdown("""
+            <div style="background: rgba(255, 255, 255, 0.85); border: 1.5px solid rgba(2, 132, 199, 0.35); border-radius: 16px; padding: 14px 20px; margin-bottom: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.03);">
+                <div style="font-family: 'Hosta', 'Host Grotesk', sans-serif; font-weight: 800; font-size: 14px; color: #0284c7; letter-spacing: 0.5px;">UNIVERSAL CLIENT-SIDE BROWSER CAMERA</div>
+                <div style="font-size: 12px; color: #475569; margin-top: 3px;">
+                    Captures live video frames directly from your laptop or mobile camera using native browser HTML5. Works across all devices, operating systems, and remote network connections without requiring server-side hardware access.
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+        cam_file = st.camera_input("Security Camera Feed (Client Browser HTML5)", key="browser_cam_client")
+        if cam_file is not None:
+            raw_bytes = cam_file.getvalue()
+            frame = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
+            if frame is not None:
+                detector = get_pose_detector() if use_pose else get_object_detector()
+                pose_classifier = PoseKineticClassifier(keypoint_conf_threshold=0.35) if use_pose else None
+                tracker = st.session_state.tracker
+                radar = BEVRadarRenderer(radar_size=480, world_extent_m=20.0, grid_step_m=2.0)
+                image_size = (frame.shape[1], frame.shape[0])
+                transformer = HomographyTransformer.for_source(0, image_size)
+                if not transformer.is_calibrated and use_demo_calib and Path("data/calibration.json").exists():
+                    transformer = HomographyTransformer.load_calibration("data/calibration.json")
+                zones = get_default_zones(feed_option, preset=zone_preset)
+                t_frame_start = time.time()
+                display_frame = frame.copy()
+
+                t_infer_start = time.time()
+                try:
+                    results = detector(display_frame, imgsz=imgsz, conf=conf_threshold, verbose=False)
+                except Exception:
+                    results = []
+                infer_ms = (time.time() - t_infer_start) * 1000.0
+
+                raw_detections = []
+                if results and len(results) > 0:
+                    r = results[0]
+                    boxes = r.boxes
+                    if boxes is not None and len(boxes) > 0:
+                        for idx, box in enumerate(boxes):
+                            cls_id = int(box.cls[0])
+                            if cls_id != 0:
+                                continue
+                            conf = float(box.conf[0])
+                            x1, y1, x2, y2 = map(float, box.xyxy[0].tolist())
+                            keypoints_data = None
+                            if use_pose and hasattr(r, 'keypoints') and r.keypoints is not None:
+                                try:
+                                    kpts = r.keypoints.data[idx].cpu().numpy()
+                                    if len(kpts) == 17:
+                                        keypoints_data = kpts
+                                except Exception:
+                                    keypoints_data = None
+                            raw_detections.append({'bbox': [x1, y1, x2, y2], 'conf': conf, 'keypoints': keypoints_data})
+
+                t_track_start = time.time()
+                active_tracks = tracker.update(raw_detections, transformer if transformer.is_calibrated else None, dt=0.033)
+                track_ms = (time.time() - t_track_start) * 1000.0
+
+                if use_pose and pose_classifier is not None:
+                    for trk in active_tracks:
+                        if trk.get('keypoints') is not None:
+                            kinetics = pose_classifier.classify(trk['keypoints'])
+                            trk['posture'] = kinetics.posture
+                            trk['posture_conf'] = kinetics.confidence
+                            trk['threat_level'] = kinetics.threat_level
+
+                now_ts = time.time()
+                frame_events = st.session_state.zone_monitor.update(
+                    active_tracks, zones if transformer.is_calibrated else [], now_ts,
+                    speed_alarm_kmh=speed_alarm, dwell_sec=dwell_confirm_sec
+                )
+                alarm_states = st.session_state.zone_monitor.get_alarm_states()
+
+                radar_tracks = []
+                breach_count = 0
+                for trk in active_tracks:
+                    tid = trk["track_id"]
+                    w_pos = trk.get("world_pos")
+                    alarm = alarm_states.get(tid, {'is_breaching': False, 'is_monitoring': False, 'reasons': []})
+                    is_confirmed_breach = alarm['is_breaching']
+                    is_monitoring = alarm['is_monitoring']
+                    speed_kmh = float(trk.get('speed', 0))
+                    threat_level = trk.get('threat_level', 1)
+                    posture_label = trk.get('posture', 'standing')
+                    if use_pose and trk.get('keypoints') is not None:
+                        draw_pose_skeleton(display_frame, trk['keypoints'])
+                    if is_confirmed_breach:
+                        breach_count += 1
+                    radar_tracks.append({
+                        "track_id": trk["track_id"], "world_pos": w_pos,
+                        "world_trail": trk.get("world_trail", []), "speed_kmh": speed_kmh,
+                        "vx": trk.get("vx", 0.0), "vy": trk.get("vy", 0.0), "is_breaching": is_confirmed_breach
+                    })
+                    x1, y1, x2, y2 = map(int, trk["bbox"])
+                    color = (0, 0, 255) if is_confirmed_breach else ((0, 215, 255) if is_monitoring else (0, 255, 0))
+                    cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
+                    speed_label = f"{speed_kmh:.1f}km/h" if w_pos is not None else "uncalibrated"
+                    tag_label = f"#{trk['track_id']} | {posture_label.upper()} | {speed_label}"
+                    (tw, th), baseline = cv2.getTextSize(tag_label, cv2.FONT_HERSHEY_SIMPLEX, 0.46, 1)
+                    tag_y = max(th + 6, y1 - 8)
+                    cv2.rectangle(display_frame, (x1, tag_y - th - 4), (x1 + tw + 6, tag_y + baseline), (15, 20, 25), -1)
+                    cv2.rectangle(display_frame, (x1, tag_y - th - 4), (x1 + tw + 6, tag_y + baseline), color, 1)
+                    cv2.putText(display_frame, tag_label, (x1 + 3, tag_y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.46, color, 1, cv2.LINE_AA)
+
+                radar_img = radar.render(zones if transformer.is_calibrated else [], radar_tracks,
+                                         title="GROUND RADAR" if transformer.is_calibrated else "UNCALIBRATED")
+                dual_view = BEVRadarRenderer.create_dual_view(display_frame, radar_img)
+                dual_view_resized = cv2.resize(dual_view, (1280, 480), interpolation=cv2.INTER_AREA)
+                dual_view_rgb = cv2.cvtColor(dual_view_resized, cv2.COLOR_BGR2RGB)
+
+                viewport_header_placeholder.markdown("""
+                    <div class="viewport-hud-topbar">
+                        <div class="viewport-hud-title">
+                            <span>PRIMARY OPTICAL FOV (LEFT) // BIRD'S EYE VIEW RADAR 20m (RIGHT)</span>
+                        </div>
+                        <div class="viewport-hud-badge">LIVE BROWSER CAMERA</div>
+                    </div>
+                """, unsafe_allow_html=True)
+                dual_view_placeholder.image(dual_view_rgb, **IMAGE_KWARGS)
+                metric_fps.metric("Inference", f"{infer_ms:.0f}ms", f"Track: {track_ms:.0f}ms")
+                metric_tracks.metric("Active Targets", str(len(active_tracks)), "Client FOV")
+                metric_breaches.metric("Intrusion Breaches", str(breach_count), f"{len(frame_events)} Events")
+                if breach_count > 0:
+                    metric_threat.metric("Threat Index", "CRITICAL", "DEFCON 1 // BREACH")
+                    alert_banner_placeholder.markdown("""
+                        <div class="soc-alert-banner">
+                            <span class="soc-alert-icon"></span> CRITICAL PERIMETER BREACH ACTIVE — INTRUDER DETECTED IN RESTRICTED ZONE
+                        </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    metric_threat.metric("Threat Index", "Nominal", "DEFCON 4 // Secure")
+                    alert_banner_placeholder.empty()
+
+    elif st.session_state.is_running and video_path is not None:
         if st.session_state.cap is None or not st.session_state.cap.isOpened():
             cap, actual_src, backend_name, err = open_capture_source(video_path)
             if cap is None or not cap.isOpened():
