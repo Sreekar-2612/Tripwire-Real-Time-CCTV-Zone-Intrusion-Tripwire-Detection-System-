@@ -230,4 +230,41 @@ def test_ema_velocity_smoothing_eliminates_jitter():
     assert np.isclose(trk.metric_vx, expected_ema_vx, atol=1e-3)
     # The jitter spike (10 m/s) was damped to 4.8 m/s!
 
+def test_linear_assignment_iou_direct_unit_test():
+    """Verify linear_assignment_iou handles empty inputs, disjoint boxes, and perfect matches."""
+    from cv_core.tracking.tracker import linear_assignment_iou
+
+    # 1. Empty inputs
+    m, ut, ud = linear_assignment_iou([], [], iou_thresh=0.3)
+    assert len(m) == 0 and len(ut) == 0 and len(ud) == 0
+
+    trk1 = SingleTrack(bbox=[10, 10, 50, 50], confidence=0.9, foot_point=(30, 50))
+    trk2 = SingleTrack(bbox=[100, 100, 150, 150], confidence=0.9, foot_point=(125, 150))
+    tracks = [trk1, trk2]
+
+    # 2. Empty detections
+    m, ut, ud = linear_assignment_iou(tracks, [], iou_thresh=0.3)
+    assert len(m) == 0
+    assert ut == [0, 1]
+    assert len(ud) == 0
+
+    # 3. Matching detections
+    dets = [
+        {"bbox": [10, 10, 50, 50], "confidence": 0.9},
+        {"bbox": [100, 100, 150, 150], "confidence": 0.85}
+    ]
+    m, ut, ud = linear_assignment_iou(tracks, dets, iou_thresh=0.3)
+    assert len(m) == 2
+    assert (0, 0) in m and (1, 1) in m
+    assert len(ut) == 0 and len(ud) == 0
+
+    # 4. Disjoint detections (below threshold)
+    far_dets = [
+        {"bbox": [500, 500, 550, 550], "confidence": 0.9}
+    ]
+    m, ut, ud = linear_assignment_iou(tracks, far_dets, iou_thresh=0.3)
+    assert len(m) == 0
+    assert ut == [0, 1]
+    assert ud == [0]
+
 

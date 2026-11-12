@@ -144,7 +144,7 @@ class BEVRadarRenderer:
                     cv2.arrowedLine(canvas, (px, py), (tip_x, tip_y), (0, 255, 120), 2, tipLength=0.3)
 
             # Metadata Tag (ID + km/h)
-            speed_kmh = float(t.get("speed_kmh", 0.0))
+            speed_kmh = float(t.get("speed_kmh", t.get("speed", 0.0)))
             if not np.isfinite(speed_kmh):
                 speed_kmh = 0.0
             tag = f"#{tid} {speed_kmh:.1f}km/h"

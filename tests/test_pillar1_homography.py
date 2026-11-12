@@ -178,3 +178,20 @@ def test_metric_zone_tripwire_no_crossing_for_collinear_or_disjoint():
     # Movement collinear with line
     assert wire.check_tripwire_crossing((1.0, 5.0), (8.0, 5.0)) is None
 
+def test_homography_length_mismatch_raises_value_error():
+    """Verify that unequal number of image and world correspondences raises ValueError."""
+    img_pts = [(0, 0), (100, 0), (100, 100), (0, 100), (50, 50)]
+    world_pts = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    with pytest.raises(ValueError):
+        HomographyTransformer.from_point_correspondences(img_pts, world_pts)
+
+def test_project_ground_grid_handles_zero_or_negative_step():
+    """Verify ground grid projection safely handles zero or negative step intervals."""
+    transformer = HomographyTransformer(H_matrix=np.eye(3))
+    # Test step = 0.0
+    segs_zero = transformer.project_ground_grid_to_image((480, 640), grid_step_m=0.0)
+    assert isinstance(segs_zero, list)
+    # Test step = -2.0
+    segs_neg = transformer.project_ground_grid_to_image((480, 640), grid_step_m=-2.0)
+    assert isinstance(segs_neg, list)
+

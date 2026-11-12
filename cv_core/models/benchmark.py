@@ -48,7 +48,8 @@ class InferenceProfiler:
             
             # Stage 1: Preprocess
             t_pre_start = time.perf_counter_ns()
-            norm = (dummy_frame.astype(np.float32) / 255.0).transpose(2, 0, 1)[None, ...]
+            chw = (dummy_frame.astype(np.float32) / 255.0).transpose(2, 0, 1)[None, ...]
+            norm = np.repeat(chw, max(1, batch_size), axis=0) if batch_size > 1 else chw
             t_pre_end = time.perf_counter_ns()
             preprocess_times.append((t_pre_end - t_pre_start) / 1e6)  # ms
 

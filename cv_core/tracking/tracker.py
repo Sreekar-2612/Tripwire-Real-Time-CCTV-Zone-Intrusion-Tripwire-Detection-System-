@@ -761,6 +761,7 @@ class MultiTargetTracker:
                     "vx": vx,
                     "vy": vy,
                     "speed": speed_kmh,
+                    "speed_kmh": speed_kmh,
                     "state": trk.state.value,
                     "posture": trk.posture,
                     "threat_level": trk.threat_level,

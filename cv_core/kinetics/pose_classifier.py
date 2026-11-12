@@ -305,8 +305,15 @@ def draw_pose_skeleton(
 
     if kpts.ndim == 3 and kpts.shape[0] == 1:
         kpts = kpts[0]
+    elif kpts.ndim == 1:
+        if kpts.shape[0] == 51:
+            kpts = kpts.reshape((17, 3))
+        elif kpts.shape[0] == 34:
+            kpts = kpts.reshape((17, 2))
+        else:
+            return frame
 
-    if kpts.shape[0] < 17:
+    if kpts.ndim != 2 or kpts.shape[0] < 17 or kpts.shape[1] < 2:
         return frame
 
     has_conf = kpts.shape[1] >= 3
@@ -315,6 +322,8 @@ def draw_pose_skeleton(
     for idx1, idx2 in COCO_SKELETON:
         if has_conf and (kpts[idx1, 2] < conf_thresh or kpts[idx2, 2] < conf_thresh):
             continue
+        if not (np.isfinite(kpts[idx1, 0]) and np.isfinite(kpts[idx1, 1]) and np.isfinite(kpts[idx2, 0]) and np.isfinite(kpts[idx2, 1])):
+            continue
         p1 = (int(kpts[idx1, 0]), int(kpts[idx1, 1]))
         p2 = (int(kpts[idx2, 0]), int(kpts[idx2, 1]))
         cv2.line(frame, p1, p2, limb_color, 2, cv2.LINE_AA)
@@ -322,6 +331,8 @@ def draw_pose_skeleton(
     # Draw joint nodes
     for i in range(17):
         if has_conf and kpts[i, 2] < conf_thresh:
+            continue
+        if not (np.isfinite(kpts[i, 0]) and np.isfinite(kpts[i, 1])):
             continue
         pt = (int(kpts[i, 0]), int(kpts[i, 1]))
         cv2.circle(frame, pt, 3, joint_color, -1, cv2.LINE_AA)

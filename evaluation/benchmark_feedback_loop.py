@@ -78,17 +78,17 @@ def benchmark_bev_radar_caching(runs: int = 500) -> Dict[str, Any]:
 
     base_mean = float(np.mean(baseline_times))
     opt_mean = float(np.mean(optimized_times))
-    speedup = base_mean / opt_mean if opt_mean > 0 else 1.0
-    latency_reduction_pct = ((base_mean - opt_mean) / base_mean) * 100.0
+    speedup = base_mean / opt_mean if opt_mean > 1e-6 else 1.0
+    latency_reduction_pct = (((base_mean - opt_mean) / base_mean) * 100.0) if base_mean > 1e-6 else 0.0
 
     return {
         "runs": runs,
         "baseline_mean_ms": round(base_mean, 3),
         "baseline_p95_ms": round(float(np.percentile(baseline_times, 95)), 3),
-        "baseline_fps": round(1000.0 / base_mean, 1),
+        "baseline_fps": round(1000.0 / base_mean, 1) if base_mean > 1e-6 else 0.0,
         "optimized_mean_ms": round(opt_mean, 3),
         "optimized_p95_ms": round(float(np.percentile(optimized_times, 95)), 3),
-        "optimized_fps": round(1000.0 / opt_mean, 1),
+        "optimized_fps": round(1000.0 / opt_mean, 1) if opt_mean > 1e-6 else 0.0,
         "speedup_factor": round(speedup, 2),
         "latency_reduction_pct": round(latency_reduction_pct, 1),
         "visual_fidelity_mse": round(mse, 4)
@@ -219,7 +219,7 @@ def benchmark_ankle_contact_vs_bbox_bottom() -> Dict[str, Any]:
     mean_err_ankle = float(np.mean(ankle_projected_errors))
     std_err_bbox = float(np.std(bbox_bottom_projected_errors))
     std_err_ankle = float(np.std(ankle_projected_errors))
-    improvement_pct = ((mean_err_bbox - mean_err_ankle) / mean_err_bbox) * 100.0
+    improvement_pct = (((mean_err_bbox - mean_err_ankle) / mean_err_bbox) * 100.0) if mean_err_bbox > 1e-6 else 0.0
 
     return {
         "frames_evaluated": num_frames,
@@ -284,7 +284,7 @@ def benchmark_temporal_posture_smoothing() -> Dict[str, Any]:
         "baseline_posture_accuracy_pct": round(baseline_acc, 1),
         "optimized_smoothed_flickers": smoothed_flickers,
         "optimized_posture_accuracy_pct": round(smoothed_acc, 1),
-        "flicker_reduction_pct": round(((baseline_flickers - smoothed_flickers) / baseline_flickers) * 100.0, 1)
+        "flicker_reduction_pct": round((((baseline_flickers - smoothed_flickers) / baseline_flickers) * 100.0) if baseline_flickers > 0 else 0.0, 1)
     }
 
 
@@ -357,7 +357,7 @@ def benchmark_pipeline_latency_profile() -> Dict[str, Any]:
         "bev_cached_render_mean_ms": round(bev_mean, 3),
         "bev_cached_render_p95_ms": round(float(np.percentile(bev_times, 95)), 3),
         "total_pipeline_mean_ms": round(total_mean, 2),
-        "total_fps": round(1000.0 / total_mean, 1)
+        "total_fps": round(1000.0 / total_mean, 1) if total_mean > 1e-6 else 0.0
     }
 
 

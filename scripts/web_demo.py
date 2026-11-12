@@ -18,6 +18,7 @@ import base64
 import hmac
 from fastapi.responses import HTMLResponse, StreamingResponse
 import uvicorn
+from contextlib import asynccontextmanager
 
 from ultralytics import YOLO
 from cv_core.geometry.homography import HomographyTransformer
@@ -28,7 +29,16 @@ from cv_core.kinetics.pose_classifier import PoseKineticClassifier, draw_pose_sk
 from cv_core.video import FrameClock
 from cv_core.monitoring import ZoneMonitor
 
-app = FastAPI(title="Tripwire CV Live Demo Showcase")
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    yield
+    if engine.cap:
+        try:
+            engine.cap.release()
+        except Exception:
+            pass
+
+app = FastAPI(title="Tripwire CV Live Demo Showcase", lifespan=lifespan)
 
 
 @app.middleware('http')

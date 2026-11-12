@@ -263,10 +263,11 @@ class HomographyTransformer:
 
         h, w = image_shape[:2]
         x_min, y_min, x_max, y_max = self.world_bounds
+        step = float(grid_step_m) if (grid_step_m is not None and grid_step_m > 1e-3) else 2.0
         segments = []
 
         # X-lines (constant X, varying Y)
-        x_vals = np.arange(x_min, x_max + grid_step_m, grid_step_m)
+        x_vals = np.arange(x_min, x_max + step, step)
         for x in x_vals:
             try:
                 u1, v1 = self.world_to_image(x, y_min)
@@ -277,7 +278,7 @@ class HomographyTransformer:
                 continue
 
         # Y-lines (constant Y, varying X)
-        y_vals = np.arange(y_min, y_max + grid_step_m, grid_step_m)
+        y_vals = np.arange(y_min, y_max + step, step)
         for y in y_vals:
             try:
                 u1, v1 = self.world_to_image(x_min, y)
